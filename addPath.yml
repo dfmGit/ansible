@@ -3,6 +3,6 @@
   tasks:
   - name: Create Folder
     file: 
-     path=/var/zdjecia/
+     path=/var/zdjecia/test/
      mode=0755 
      state=directory
