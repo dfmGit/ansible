@@ -1,3 +1,5 @@
+---
+
 - name: Create Folder
   file: 
    path=/var/zdjecia/
