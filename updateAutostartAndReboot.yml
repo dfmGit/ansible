@@ -2,12 +2,11 @@
 
 - hosts: all
   tasks:
- 
-  - name: Install docker-compose
-     get_url:
-       url: http://loaderwww.dfm.biz.pl/AnsibleFiels/autostart
-       dest: /etc/xdg/lxsession/LXDE-pi/autostart  
+    - name: Install docker-compose
+       get_url:
+        url: http://loaderwww.dfm.biz.pl/AnsibleFiels/autostart
+        dest: /etc/xdg/lxsession/LXDE-pi/autostart  
   
-  - name: Reboot
-    become: True
-    reboot:
+    - name: Reboot
+      become: True
+      reboot:
