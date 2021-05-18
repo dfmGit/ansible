@@ -7,4 +7,8 @@
       get_url: 
         url: http://loaderwww.dfm.biz.pl/AnsibleFiels/autostart 
         dest: /etc/xdg/lxsession/LXDE-pi  
+        
+    - name: Reboot
+      become: True
+      reboot:
   
