@@ -6,5 +6,5 @@
     - name: Install docker-compose
       get_url: 
         url: http://loaderwww.dfm.biz.pl/AnsibleFiels/autostart 
-        dest: /etc/xdg/lxsession/LXDE-pi/autostart  
+        dest: /etc/xdg/lxsession/LXDE-pi  
   
