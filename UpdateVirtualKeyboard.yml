@@ -1,5 +1,6 @@
 ---
 - hosts: all
+  become: true
   tasks:
   - name: Update Repository
     command: apt-get update -y --allow-releaseinfo-change
