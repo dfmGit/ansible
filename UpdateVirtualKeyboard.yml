@@ -1,8 +1,6 @@
 ---
 - hosts: all
   tasks:
-  - name: Update Repository
-    command: apt-get update -y --allow-releaseinfo-change
   - name: Update and upgrade apt packages
     become: true
     apt:
