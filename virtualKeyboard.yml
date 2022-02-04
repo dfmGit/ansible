@@ -1,0 +1,8 @@
+---
+- hosts: all
+  tasks:
+  - name: instal VirtualKerbord
+     name: matchbox-keyboard
+     state: present
+     update_cache: true
+    become: true
