@@ -1,8 +1,9 @@
 ---
 - hosts: all
   tasks:
-  - name: instal VirtualKerbord
+  - name: Instal VirtualKeyboard
+    apt:
      name: matchbox-keyboard
      state: present
-     update_cache: true
+      update_cache: true
     become: true
