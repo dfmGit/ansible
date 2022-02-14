@@ -11,7 +11,7 @@
      upgrade: 'yes'
   - name: Instal VirtualKeyboard
     apt:
-     name: matchbox-keyboard
+     name: onboard
      state: present
      update_cache: true
     become: true
