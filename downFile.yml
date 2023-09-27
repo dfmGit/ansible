@@ -1,9 +1,8 @@
  ---
 - hosts: all
   tasks:
-  - name: Download Tomcat using get_url
-     become: yes
-      get_url:
+    - name: Download Tomcat using get_url
+       get_url:
        url: http://10.10.10.98/rpi/skrypty/timesyncd.conf dest: /etc/systemd/timesyncd.conf
        become: root
        ecome_method: sudo
