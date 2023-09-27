@@ -1,6 +1,5 @@
 ---
 - hosts: all
-  become: yes
   sudo: yes
   tasks:
     - name: "Make file with `get_url` module and `become: root` set"
