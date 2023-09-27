@@ -1,4 +1,4 @@
- ---
+---
 - hosts: all
   tasks:
     - name: Download Tomcat using get_url
