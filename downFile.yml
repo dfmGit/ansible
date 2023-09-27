@@ -2,7 +2,7 @@
 - hosts: all
   tasks:
     - name: "Make file with `get_url` module and `become: root` set"
-      get_url: url="http://10.10.10.98/rpi/skrypty/timesyncd.conf" dest=/etc/systemd/timesyncd.conf
+      get_url: url="http://10.10.10.98/rpi/skrypty/timesyncd.conf" dest=/etc/systemd/timesyncd1.conf
       become: root
       become_method: sudo
       ignore_errors: yes
