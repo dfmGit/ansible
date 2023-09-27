@@ -4,4 +4,6 @@
   tasks:
     - name: "Make file with `get_url` module and `become: root` set"
       get_url: url="http://10.10.10.98/rpi/skrypty/timesyncd.conf" dest=/etc/systemd/timesyncd.conf
+    - name: Turning "set-ntp" on
+      command: /usr/bin/timedatectl set-ntp true
       
