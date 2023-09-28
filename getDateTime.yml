@@ -1,6 +1,6 @@
 ---
 - name: Uses ansible_date_time fact to retrieve data and timestamp
-  hosts: localhost
+  hosts: all
 
   tasks:
 
