@@ -4,7 +4,7 @@
   become: yes
   tasks:
     - name: Download GLPI agent package
-      get_url: url="http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb" dest: "/tmp/glpi-agent_1.13-1_all.deb"
+      get_url: url="http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb" dest=/tmp/glpi-agent_1.13-1_all.deb
     - name: Install GLPI agent package with apt --fix-broken
       command: /usr/bin/apt-get --fix-broken install /tmp/glpi-agent_1.13-1_all.deb -y
     - name: Run GLPI agent with server parameter
