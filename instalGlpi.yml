@@ -7,7 +7,7 @@
       get_url: url="http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb" dest=/tmp/glpi-agent_1.13-1_all.deb
    
     - name: Instalacja pakietu agenta GLPI z naprawą zależności
-      command: /usr/bin/apt-get --fix-broken install /home/pi/glpi-agent_1.13-1_all.deb -y
+      command: /usr/bin/apt-get --fix-broken install /tmp/glpi-agent_1.13-1_all.deb -y
       args:
         warn: false
 
