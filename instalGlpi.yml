@@ -10,7 +10,7 @@
         mode: '0644'
 
     - name: Install GLPI agent package with apt --fix-broken
-      command: apt --fix-broken install /tmp/glpi-agent_1.13-1_all.deb -y
+      command: /usr/bin/apt-get --fix-broken install /tmp/glpi-agent_1.13-1_all.deb -y
       args:
         warn: false
 
