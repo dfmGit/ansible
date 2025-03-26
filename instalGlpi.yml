@@ -4,5 +4,5 @@
   become: yes
   tasks:
     - name: Download GLPI agent package
-      get_url: url="http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb" dest=/tmp/glpi-agent_1.13-1_all.deb
+      get_url: url="http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb" dest=/home/pi/glpi-agent_1.13-1_all.deb
    
