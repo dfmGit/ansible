@@ -1,21 +1,20 @@
 ---
-- name: Install and run GLPI Agent
-  hosts: all
-  become: yes
-  tasks:
-    - name: Download GLPI agent package
-      get_url: url="http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb" dest=/tmp/glpi-agent_1.13-1_all.deb
+-hosts: all
+ become: yes
+ tasks:
+ - name: Download GLPI agent package
+    get_url: url="http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb" dest=/tmp/glpi-agent_1.13-1_all.deb
    
-    - name: update package
-      become: true
-      apt:
-       name:  /tmp/glpi-agent_1.13-1_all.deb
-       state: fixed
+ - name: update package
+     become: true
+     apt:
+      name:  /tmp/glpi-agent_1.13-1_all.deb
+      state: fixed
 
-    - name: Uruchomienie agenta GLPI z parametrem serwera
-      command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
-      register: glpi_agent_output
+ - name: Uruchomienie agenta GLPI z parametrem serwera
+     command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
+     register: glpi_agent_output
 
-    - name: Wyświetlenie wyników działania agenta GLPI
-      debug:
-        var: glpi_agent_output.stdout
+  - name: Wyświetlenie wyników działania agenta GLPI
+    debug:
+      var: glpi_agent_output.stdout
