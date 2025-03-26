@@ -7,6 +7,10 @@
         url: "http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb"
         dest: /tmp/glpi-agent_1.13-1_all.deb
 
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+      ignore_errors: yes
     - name: Instalacja pakietu agenta GLPI
       apt:
         deb: /tmp/glpi-agent_1.13-1_all.deb
