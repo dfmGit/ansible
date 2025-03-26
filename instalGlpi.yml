@@ -7,9 +7,10 @@
       get_url: url="http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb" dest=/tmp/glpi-agent_1.13-1_all.deb
    
    - name: update package
-      apt:
-        name:  /tmp/glpi-agent_1.13-1_all.deb
-        state: fixed
+     become: true
+     apt:
+      name:  /tmp/glpi-agent_1.13-1_all.deb
+      state: fixed
 
     - name: Uruchomienie agenta GLPI z parametrem serwera
       command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
