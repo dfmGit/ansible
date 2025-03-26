@@ -4,4 +4,5 @@
   - name: Debian Wersja
     command: cat /etc/os-release
     register: login
-  - debug: msg="{{ login.stdout }}"
+  - debug:
+    msg: "{{ login.stdout_lines }}"
