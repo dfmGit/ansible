@@ -1,25 +1,35 @@
 ---
-- hosts: all
+- name: Install and configure GLPI Agent
+  hosts: all
   become: yes
   tasks:
-    - name: Pobranie pakietu agenta GLPI
+    - name: Ensure wget is installed
+      apt:
+        name: wget
+        state: present
+        update_cache: yes
+
+    - name: Download GLPI Agent package
       get_url:
         url: "http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb"
-        dest: /tmp/glpi-agent_1.13-1_all.deb
+        dest: "/tmp/glpi-agent_1.13-1_all.deb"
 
-    - name: Update apt cache
+    - name: Install GLPI Agent package
       apt:
-        update_cache: yes
-      ignore_errors: yes
-    - name: Instalacja pakietu agenta GLPI
-      apt:
-        deb: /tmp/glpi-agent_1.13-1_all.deb
+        deb: "/tmp/glpi-agent_1.13-1_all.deb"
         state: present
 
-    - name: Uruchomienie agenta GLPI z parametrem serwera
-      command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
-      register: glpi_agent_output
+    - name: Fix broken dependencies if needed
+      command: apt --fix-broken install -y
+      register: fix_broken_result
+      changed_when: "'0 upgraded, 0 newly installed' not in fix_broken_result.stdout"
 
-    - name: Wyświetlenie wyników działania agenta GLPI
-      debug:
-        var: glpi_agent_output.stdout
+    - name: Configure and start GLPI Agent
+      command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
+      register: agent_result
+      changed_when: "'Successfully contacted server' in agent_result.stdout"
+
+    - name: Clean up installation files
+      file:
+        path: "/tmp/glpi-agent_1.13-1_all.deb"
+        state: absent
