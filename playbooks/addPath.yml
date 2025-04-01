@@ -5,4 +5,4 @@
     file: 
      path=/var/zdjecia/test/
      mode=0755 
-     state=directory
+     state=directory 
