@@ -15,6 +15,7 @@ hosts_10_239  = generuj_hosty("10.239")
 all_hosts = hosts_10_10 + hosts_10_238 + hosts_10_239
 
 # Inicjalizacja grup VLAN oraz nadrzędnych grup DM/RE
+group_montownia = []
 group_szwalnia = []
 group_pianka   = []
 group_metal    = []
@@ -27,7 +28,10 @@ for host in all_hosts:
         last_octet = int(host.split('.')[-1])
     except ValueError:
         continue
-    
+    if last_octet == 24:
+        group_montownia.append(host)
+    if last_octet == 25:
+        group_montownia.append(host)    
     if last_octet == 21:
         group_szwalnia.append(host)
     if last_octet == 22:
@@ -44,14 +48,14 @@ for host in all_hosts:
 # Budowanie inwentarza
 inventory = {
     "all": {
-        "children": ["montownianie", "DM", "RE", "Szwalnia", "Pianka", "Metal"],
+        "children": ["Montownia", "DM", "RE", "Szwalnia", "Pianka", "Metal"],
         "vars": {
             "ansible_user": "your_user",
             "ansible_ssh_private_key_file": "~/.ssh/id_rsa"
         }
     },
-    "montownianie": {
-        "hosts": all_hosts
+    "Montownia": {
+        "hosts": group_montownia
     },
     "Szwalnia": {
         "hosts": group_szwalnia
