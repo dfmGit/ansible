@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import json
 
-# Generowanie listy hostów z podanych podsieci
+# Generowanie listy hostow z podanych podsieci
 hosts = [f"10.10.24.{i}" for i in range(1, 255)] + [f"10.10.25.{i}" for i in range(1, 255)]
 
 # Struktura dynamicznego inwentarza Ansible
