@@ -48,11 +48,7 @@ for host in all_hosts:
 # Budowanie inwentarza
 inventory = {
     "all": {
-        "children": ["Montownia", "DM", "RE", "Szwalnia", "Pianka", "Metal"],
-        "vars": {
-            "ansible_user": "your_user",
-            "ansible_ssh_private_key_file": "~/.ssh/id_rsa"
-        }
+        "children": ["Montownia", "DM", "RE", "Szwalnia", "Pianka", "Metal"]
     },
     "Montownia": {
         "hosts": group_montownia
