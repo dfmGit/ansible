@@ -1,57 +1,74 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 import json
 
-from datetime import datetime
+# Funkcja generująca hosty dla danej puli (np. 10.10, 10.238, 10.239)
+def generuj_hosty(prefix):
+    # Przyjmujemy podsieci 24 i 25
+    return [f"{prefix}.24.{i}" for i in range(1, 255)] + [f"{prefix}.25.{i}" for i in range(1, 255)]
 
-# This is a useful script to determine what happens on an inventory import
-# when the contents change. By using a timestamp, we should force the values
-# herein to change every time the sync is done.
-#
-# There are 2 examples
-#  - demonstrate new / old hosts by changing the hostname returned each time
-#         which is relevant to `overwrite`
-#  - demonstrate `overwrite_vars` by including 2 sub-examples
-#      - variable changes its name on every import
-#      - variable changes its value on every import
+# Generowanie hostów dla poszczególnych pul
+hosts_10_10   = generuj_hosty("10.10")
+hosts_10_238  = generuj_hosty("10.238")
+hosts_10_239  = generuj_hosty("10.239")
 
+# Łączymy wszystkie hosty
+all_hosts = hosts_10_10 + hosts_10_238 + hosts_10_239
 
-time_val = datetime.utcnow().strftime('%Y_%m_%d_%H_%M_%S.%f')
+# Inicjalizacja grup VLAN oraz nadrzędnych grup DM/RE
+group_szwalnia = []
+group_pianka   = []
+group_metal    = []
+group_dm       = []
+group_re       = []
 
-moover = "moover-{}".format(time_val)
+for host in all_hosts:
+    # Pobranie ostatniego oktetu
+    try:
+        last_octet = int(host.split('.')[-1])
+    except ValueError:
+        continue
+    
+    if last_octet == 21:
+        group_szwalnia.append(host)
+    if last_octet == 22:
+        group_pianka.append(host)
+    if last_octet == 67:
+        group_metal.append(host)
+    
+    # Przypisanie do nadrzędnych grup
+    if host.startswith("10.10."):
+        group_dm.append(host)
+    elif host.startswith("10.238.") or host.startswith("10.239."):
+        group_re.append(host)
 
-print(json.dumps({
-    "_meta": {
-        "hostvars": {
-            "change_of_vars": {
-                "static_key": "host_dynamic_{}".format(time_val),
-                "dynamic_{}".format(time_val): "host_static_value"
-            },
-            moover: {
-                "static_var": "static_value"
-            }
-        }
-    },
+# Budowanie inwentarza
+inventory = {
     "all": {
+        "children": ["montownianie", "DM", "RE", "Szwalnia", "Pianka", "Metal"],
         "vars": {
-            "static_inventory_key": "inventory_dynamic_{}".format(time_val),
-            "dynamic_{}".format(time_val): "inventory_static_value"
+            "ansible_user": "your_user",
+            "ansible_ssh_private_key_file": "~/.ssh/id_rsa"
         }
     },
-    "group_with_moover": {
-        "hosts": ["change_of_vars", moover]
+    "montownianie": {
+        "hosts": all_hosts
     },
-    "group_with_vars": {
-        "hosts": ["change_of_vars"],
-        "vars": {
-            "static_group_key": "group_dynamic_{}".format(time_val),
-            "dynamic_group_{}".format(time_val): "group_static_value"
-        }
+    "Szwalnia": {
+        "hosts": group_szwalnia
     },
-    "ungrouped": {
-        "hosts": [
-            moover,
-            "change_of_vars"
-        ]
+    "Pianka": {
+        "hosts": group_pianka
+    },
+    "Metal": {
+        "hosts": group_metal
+    },
+    "DM": {
+        "hosts": group_dm
+    },
+    "RE": {
+        "hosts": group_re
     }
-}))
+}
+
+# Wydrukowanie inwentarza w formacie JSON
+print(json.dumps(inventory, indent=4))
