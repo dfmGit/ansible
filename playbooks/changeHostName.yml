@@ -5,13 +5,9 @@
   gather_facts: yes
 
   tasks:
-    - name: Ustawienie faktu z adresem IP domyślnego interfejsu
-      set_fact:
-        ip_address: "{{ ansible_default_ipv4.address }}"
-
     - name: Utworzenie nowej nazwy hosta z dołączonym adresem IP
       set_fact:
-        new_hostname: "{{ ansible_hostname }}-{{ ip_address | replace('.', '-') }}"
+        new_hostname: "rpi_{{ ip_address | replace('.', '_') }}"
 
     - name: Zmiana nazwy hosta na nową
       ansible.builtin.hostname:
