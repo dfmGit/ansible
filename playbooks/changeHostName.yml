@@ -11,7 +11,7 @@
 
     - name: Utworzenie nowej nazwy hosta z dołączonym adresem IP
       set_fact:
-        new_hostname: "rpi_{{ ip_address | replace('.', '_') }}"
+        new_hostname: "rpi-{{ ip_address | replace('.', '-') }}"
 
     - name: Zmiana nazwy hosta na nową
       ansible.builtin.hostname:
