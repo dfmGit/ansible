@@ -5,6 +5,10 @@
   gather_facts: yes
 
   tasks:
+    - name: Ustawienie faktu z adresem IP
+      set_fact:
+        ip_address: "{{ ansible_default_ipv4.address }}"
+
     - name: Utworzenie nowej nazwy hosta z dołączonym adresem IP
       set_fact:
         new_hostname: "rpi_{{ ip_address | replace('.', '_') }}"
@@ -19,5 +23,4 @@
         regexp: '^(127\.0\.1\.1\s+).*'
         line: "127.0.1.1   {{ new_hostname }}"
         backup: yes
-      # Warunek poniżej możesz dostosować lub usunąć, zależy od dystrybucji
       when: ansible_distribution != 'Debian'
