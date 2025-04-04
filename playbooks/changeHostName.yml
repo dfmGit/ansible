@@ -25,12 +25,12 @@
         backup: yes
       when: ansible_distribution != 'Debian'
 
-     - name: Upewnij się, że plik /etc/hosts istnieje
+    - name: Upewnij się, że plik /etc/hosts istnieje
       file:
         path: /etc/hosts
         state: touch
 
-     - name: Popraw hostname w linii 127.0.1.1
+    - name: Popraw hostname w linii 127.0.1.1
       lineinfile:
         path: /etc/hosts
         regexp: '^127\.0\.1\.1\s+.*'
