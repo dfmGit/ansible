@@ -24,3 +24,16 @@
         line: "127.0.1.1   {{ new_hostname }}"
         backup: yes
       when: ansible_distribution != 'Debian'
+
+     - name: Upewnij się, że plik /etc/hosts istnieje
+      file:
+        path: /etc/hosts
+        state: touch
+
+     - name: Popraw hostname w linii 127.0.1.1
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s+.*'
+        line: "127.0.1.1 {{ ansible_hostname }}"
+        state: present
+        backrefs: yes
