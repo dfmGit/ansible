@@ -25,7 +25,7 @@ group_re       = []
 for host in all_hosts:
     # Pobranie ostatniego oktetu
     try:
-        last_octet = int(host.split('.')[-1])
+        last_octet = int(host.split('.')[-2])
     except ValueError:
         continue
     if last_octet == 24:
