@@ -1,74 +1,55 @@
 #!/usr/bin/env python3
 import json
+from collections import defaultdict
 
-# Funkcja generujaca hosty dla danej puli (np. 10.10, 10.238, 10.239)
+# Generator hostów z danego prefixu i listy podsieci
 def generuj_hosty(prefix):
-    # Przyjmujemy podsieci 24 i 25
-    return [f"{prefix}.24.{i}" for i in range(1, 255)] + [f"{prefix}.25.{i}" for i in range(1, 255)]
+    for subnet in [24, 25, 23, 21, 67]:
+        for i in range(1, 255):
+            yield f"{prefix}.{subnet}.{i}"
 
-# Generowanie hostow dla poszczegolnych pul
-hosts_10_10   = generuj_hosty("10.10")
-hosts_10_238  = generuj_hosty("10.238")
-hosts_10_239  = generuj_hosty("10.239")
+# Prefiksy do wygenerowania
+prefixy = ["10.10", "10.238", "10.239"]
 
-# Laczymy wszystkie hosty
-all_hosts = hosts_10_10 + hosts_10_238 + hosts_10_239
+# Inicjalizacja grup jako defaultdict z listami
+grupy = defaultdict(list)
 
-# Inicjalizacja grup VLAN oraz nadrzednych grup DM/RE
-group_montownia = []
-group_szwalnia = []
-group_pianka   = []
-group_metal    = []
-group_dm       = []
-group_re       = []
+# Przetwarzamy hosty na bieżąco
+for prefix in prefixy:
+    for host in generuj_hosty(prefix):
+        try:
+            subnet = int(host.split('.')[-2])
+        except ValueError:
+            continue
 
-for host in all_hosts:
-    # Pobranie ostatniego oktetu
-    try:
-        last_octet = int(host.split('.')[-2])
-    except ValueError:
-        continue
-    if last_octet == 24:
-        group_montownia.append(host)
-    if last_octet == 25:
-        group_montownia.append(host)    
-    if last_octet == 21:
-        group_szwalnia.append(host)
-    if last_octet == 22:
-        group_pianka.append(host)
-    if last_octet == 67:
-        group_metal.append(host)
-    
-    # Przypisanie do nadrzednych grup
-    if host.startswith("10.10."):
-        group_dm.append(host)
-    elif host.startswith("10.238.") or host.startswith("10.239."):
-        group_re.append(host)
+        # Grupy VLAN
+        if subnet in [24, 25]:
+            grupy["Montownia"].append(host)
+        elif subnet == 21:
+            grupy["Szwalnia"].append(host)
+        elif subnet == 22:
+            grupy["Pianka"].append(host)
+        elif subnet == 67:
+            grupy["Metal"].append(host)
+
+        # Grupy nadrzędne
+        if host.startswith("10.10."):
+            grupy["DM"].append(host)
+        elif host.startswith("10.238.") or host.startswith("10.239."):
+            grupy["RE"].append(host)
 
 # Budowanie inwentarza
 inventory = {
     "all": {
         "children": ["Montownia", "DM", "RE", "Szwalnia", "Pianka", "Metal"]
     },
-    "Montownia": {
-        "hosts": group_montownia
-    },
-    "Szwalnia": {
-        "hosts": group_szwalnia
-    },
-    "Pianka": {
-        "hosts": group_pianka
-    },
-    "Metal": {
-        "hosts": group_metal
-    },
-    "DM": {
-        "hosts": group_dm
-    },
-    "RE": {
-        "hosts": group_re
-    }
+    "Montownia": {"hosts": grupy["Montownia"]},
+    "Szwalnia":  {"hosts": grupy["Szwalnia"]},
+    "Pianka":    {"hosts": grupy["Pianka"]},
+    "Metal":     {"hosts": grupy["Metal"]},
+    "DM":        {"hosts": grupy["DM"]},
+    "RE":        {"hosts": grupy["RE"]},
 }
 
-# Wydrukowanie inwentarza w formacie JSON
+# Wydruk JSON
 print(json.dumps(inventory, indent=4))
