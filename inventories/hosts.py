@@ -4,7 +4,7 @@ import json
 # Funkcja generujaca hosty dla danej puli (np. 10.10, 10.238, 10.239)
 def generuj_hosty(prefix):
     # Przyjmujemy podsieci 24 i 25
-    return [f"{prefix}.24.{i}" for i in range(1, 255)] + [f"{prefix}.25.{i}" for i in range(1, 255)] + [f"{prefix}.23.{i}" for i in range(1, 255)] + [f"{prefix}.21.{i}" for i in range(1, 255)] + [f"{prefix}.67.{i}" for i in range(1, 255)]
+    return [f"{prefix}.24.{i}" for i in range(1, 255)] + [f"{prefix}.25.{i}" for i in range(1, 255)]
 
 # Generowanie hostow dla poszczegolnych pul
 hosts_10_10   = generuj_hosty("10.10")
