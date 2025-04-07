@@ -9,7 +9,7 @@ def generuj_hosty(prefix):
             yield f"{prefix}.{subnet}.{i}"
 
 # Prefiksy do wygenerowania
-prefixy = ["10.10", "10.238", "10.239"]
+prefixy = ["10.10"]
 
 # Inicjalizacja grup jako defaultdict z listami
 grupy = defaultdict(list)
