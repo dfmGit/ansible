@@ -8,7 +8,7 @@
         url: http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb
         dest: "/tmp"
     - name: Instalacja paczki z opcją naprawy zaleznosci
-      ansible.builtin.command: apt --fix-broken install /tmp/glpi-agent_1.13-1_all.deb -y
+      ansible.builtin.command: dpkg -i /tmp/glpi-agent_1.13-1_all.deb && apt --fix-broken install -y
       register: install_result
       changed_when: "'installed' in install_result.stdout or install_result.rc == 0"
       failed_when: install_result.rc != 0
