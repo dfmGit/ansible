@@ -23,9 +23,8 @@
         line: 'deb http://raspbian.raspberrypi.org/raspbian/ buster main contrib non-free'
         state: present
       when: "'jessie' in os_release.stdout"
-    - name: Odśwież listę pakietów (apt update)
-      ansible.builtin.apt:
-        update_cache: yes
+      
+   
 
     - name: Pobierz plik .deb GLPI Agent
       get_url:
