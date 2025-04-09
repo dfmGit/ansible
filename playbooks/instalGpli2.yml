@@ -29,6 +29,20 @@
         path: /etc/apt/apt.conf.d/99releaseinfo
         state: absent
 
+    - name: Usuń uszkodzone listy pakietów
+      ansible.builtin.file:
+        path: /var/lib/apt/lists
+        state: absent
+
+    - name: Utwórz pusty katalog list (APT)
+      ansible.builtin.file:
+        path: /var/lib/apt/lists
+        state: directory
+        mode: '0755'
+
+    - name: Wymuś update repozytoriów mimo zmiany suite (buster › oldoldstable)
+      ansible.builtin.command: apt-get update --allow-releaseinfo-change
+      
     - name: Odśwież listę pakietów
       ansible.builtin.apt:
         update_cache: yes
