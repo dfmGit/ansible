@@ -29,8 +29,7 @@
         path: /etc/apt/apt.conf.d/99releaseinfo
         state: absent
 
-    - name: Napraw dpkg, jeśli coś zostało nieskonfigurowane
-      ansible.builtin.command: dpkg --configure -a
+    
 
     - name: Wyczyść cache APT
       ansible.builtin.command: apt-get clean
