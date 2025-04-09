@@ -2,29 +2,46 @@
 - name: Install and configure GLPI Agent
   hosts: all
   become: yes
+
   tasks:
-    - name:  Download the file
-      get_url:
+    - name: Sprawdź czy host odpowiada (ping)
+      ansible.builtin.ping:
+
+    - name: Pobierz plik instalacyjny GLPI Agent
+      ansible.builtin.get_url:
         url: http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb
-        dest: "/tmp"
-    - name: Install .deb package using dpkg
+        dest: /tmp/glpi-agent_1.13-1_all.deb
+
+    - name: Zainstaluj .deb za pomocą dpkg
       ansible.builtin.command: dpkg -i /tmp/glpi-agent_1.13-1_all.deb
       register: dpkg_result
       ignore_errors: yes
+      changed_when: "'installed' in dpkg_result.stdout or dpkg_result.rc == 0"
 
-    - name: Napraw zależności po dpkg
-      ansible.builtin.command: apt install -f -y
+    - name: Napraw zależności jeśli dpkg zwrócił błąd
+      ansible.builtin.apt:
+        update_cache: yes
+        force: yes
       when: dpkg_result.rc != 0
-      
-    - name: Uruchomienie GLPI Agent z parametrem --server
-      ansible.builtin.command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
-      register: glpi_agent_output
-    - name: Dodaj lub zaktualizuj wpis server w pliku agent.cfg
+
+    - name: Upewnij się, że katalog konfiguracyjny istnieje
+      ansible.builtin.file:
+        path: /etc/glpi-agent
+        state: directory
+        mode: '0755'
+
+    - name: Dodaj lub zaktualizuj wpis 'server' w pliku agent.cfg
       ansible.builtin.lineinfile:
         path: /etc/glpi-agent/agent.cfg
         regexp: '^server\s*='
         line: 'server = https://glpi.dfm.com.pl/marketplace/glpiinventory'
         create: yes
+
+    - name: Uruchomienie GLPI Agent z parametrem --server
+      ansible.builtin.command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
+      register: glpi_agent_output
+      changed_when: false  # uruchomienie niekoniecznie jest zmianą
+
     - name: Wyświetlenie wyniku działania agenta
       ansible.builtin.debug:
         var: glpi_agent_output.stdout
