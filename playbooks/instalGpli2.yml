@@ -12,7 +12,7 @@
       ansible.builtin.lineinfile:
         path: /etc/apt/sources.list
         regexp: '^deb http://mirrordirector.raspbian.org/raspbian/ jessie'
-        line: 'deb http://archive.raspberrypi.org/debian/ buster main contrib non-free rpi'
+        line: 'deb http://archive.raspberrypi.org/debian/ buster main'
         state: present
       when: "'jessie' in os_release.stdout"
 
