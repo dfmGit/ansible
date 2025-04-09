@@ -24,44 +24,36 @@
         state: present
       when: "'jessie' in os_release.stdout"
 
-    - name: Usuń plik 99releaseinfo, jeśli istnieje
+    - name: Usuń plik 99releaseinfo jeśli istnieje
       ansible.builtin.file:
         path: /etc/apt/apt.conf.d/99releaseinfo
         state: absent
+
+    - name: Napraw dpkg, jeśli coś zostało nieskonfigurowane
+      ansible.builtin.command: dpkg --configure -a
+
+    - name: Wyczyść cache APT
+      ansible.builtin.command: apt-get clean
+
+    - name: Odśwież listę pakietów
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Napraw zależności apt
+      ansible.builtin.command: apt-get install -f -y
 
     - name: Pobierz plik .deb GLPI Agent
       get_url:
         url: http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb
         dest: "/tmp/glpi-agent_1.13-1_all.deb"
 
-    - name: Zainstaluj pakiet .deb GLPI Agent za pomocą dpkg
-      ansible.builtin.command: dpkg -i /tmp/glpi-agent_1.13-1_all.deb
-      register: dpkg_result
-      ignore_errors: yes
-
-    - name: Napraw brakujące zależności po dpkg
-      ansible.builtin.command: apt-get install -y -f
-      when: dpkg_result.rc != 0
-
-    - name: Napraw błędne zależności z apt --fix-broken install
-      ansible.builtin.command: apt-get --fix-broken install -y
-      when: dpkg_result.rc != 0
-
-    - name: Zainstaluj python-apt
+    - name: Zainstaluj pakiet GLPI Agent
       ansible.builtin.apt:
-        name: python-apt
-        state: present
-        install_recommends: no
-
-    - name: Uruchomienie GLPI Agent z parametrem --server
-      ansible.builtin.command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
-      register: glpi_agent_output
-      changed_when: false
-      ignore_errors: yes
+        deb: /tmp/glpi-agent_1.13-1_all.deb
 
     - name: Dodaj lub zaktualizuj wpis server w pliku agent.cfg
       ansible.builtin.lineinfile:
         path: /etc/glpi-agent/agent.cfg
         regexp: '^server='
         line: 'server=https://glpi.dfm.com.pl/marketplace/glpiinventory'
-        state: present
+        create: yes
