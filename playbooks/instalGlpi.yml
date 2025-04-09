@@ -4,25 +4,18 @@
   become: yes
 
   tasks:
-    - name: Sprawdź czy host odpowiada (ping)
+    - name: Sprawdź dostępność hostów (ping)
       ansible.builtin.ping:
 
-    - name: Pobierz plik instalacyjny GLPI Agent
+    - name: Pobierz pakiet instalacyjny GLPI Agent
       ansible.builtin.get_url:
         url: http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb
         dest: /tmp/glpi-agent_1.13-1_all.deb
 
-    - name: Zainstaluj .deb za pomocą dpkg
-      ansible.builtin.command: dpkg -i /tmp/glpi-agent_1.13-1_all.deb
-      register: dpkg_result
-      ignore_errors: yes
-      changed_when: "'installed' in dpkg_result.stdout or dpkg_result.rc == 0"
-
-    - name: Napraw zależności jeśli dpkg zwrócił błąd
+    - name: Instaluj pakiet .deb przez apt (automatycznie rozwiązuje zależności)
       ansible.builtin.apt:
+        deb: /tmp/glpi-agent_1.13-1_all.deb
         update_cache: yes
-        force: yes
-      when: dpkg_result.rc != 0
 
     - name: Upewnij się, że katalog konfiguracyjny istnieje
       ansible.builtin.file:
@@ -40,7 +33,7 @@
     - name: Uruchomienie GLPI Agent z parametrem --server
       ansible.builtin.command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
       register: glpi_agent_output
-      changed_when: false  # uruchomienie niekoniecznie jest zmianą
+      changed_when: false
 
     - name: Wyświetlenie wyniku działania agenta
       ansible.builtin.debug:
