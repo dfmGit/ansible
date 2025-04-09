@@ -40,8 +40,11 @@
         state: directory
         mode: '0755'
 
-    - name: Wymuś update repozytoriów mimo zmiany suite (buster › oldoldstable)
-      ansible.builtin.command: apt-get update --allow-releaseinfo-change
+    - name: Wyłącz ostrzeżenie o zmianie Suite (Release Info)
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/99disable-releaseinfo-change
+        content: 'Acquire::AllowReleaseInfoChange "true";'
+        mode: '0644'
       
     - name: Odśwież listę pakietów
       ansible.builtin.apt:
