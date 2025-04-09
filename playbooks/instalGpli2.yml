@@ -41,6 +41,12 @@
       ansible.builtin.command: apt-get install -y -f
       when: dpkg_result.rc != 0
 
+    - name: Teraz zainstaluj python-apt
+      ansible.builtin.apt:
+        name: python-apt
+        state: present
+        install_recommends: no  
+
     - name: Uruchomienie GLPI Agent z parametrem --server
       ansible.builtin.command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
       register: glpi_agent_output
