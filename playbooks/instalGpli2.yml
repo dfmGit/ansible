@@ -24,6 +24,11 @@
         state: present
       when: "'jessie' in os_release.stdout"
 
+    - name: Usuń plik 99releaseinfo, jeśli istnieje
+      ansible.builtin.file:
+        path: /etc/apt/apt.conf.d/99releaseinfo
+        state: absent
+
     - name: Pobierz plik .deb GLPI Agent
       get_url:
         url: http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb
