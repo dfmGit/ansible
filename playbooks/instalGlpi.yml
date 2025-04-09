@@ -8,13 +8,19 @@
         url: http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb
         dest: "/tmp"
     - name: Instalacja paczki z opcją naprawy zaleznosci
-      ansible.builtin.command: dpkg -i /tmp/glpi-agent_1.13-1_all.deb && apt --fix-broken install -y
+      ansible.builtin.command: apt --fix-broken install ./glpi-agent_1.13-1_all.deb -y
       register: install_result
       changed_when: "'installed' in install_result.stdout or install_result.rc == 0"
       failed_when: install_result.rc != 0
     - name: Uruchomienie GLPI Agent z parametrem --server
       ansible.builtin.command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
       register: glpi_agent_output
+    - name: Dodaj lub zaktualizuj wpis server w pliku agent.cfg
+      ansible.builtin.lineinfile:
+        path: /etc/glpi-agent/agent.cfg
+        regexp: '^server\s*='
+        line: 'server = https://glpi.dfm.com.pl/marketplace/glpiinventory'
+        create: yes
     - name: Wyświetlenie wyniku działania agenta
       ansible.builtin.debug:
         var: glpi_agent_output.stdout
