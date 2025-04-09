@@ -24,12 +24,12 @@
         state: present
       when: "'jessie' in os_release.stdout"
       
-   - name: Install python-apt package
-      ansible.builtin.apt:
-      name: python-apt
-      state: present
-      install_recommends: no
-      update_cache: yes
+    - name: Install python-apt package
+       ansible.builtin.apt:
+       name: python-apt
+       state: present
+       install_recommends: no
+       update_cache: yes
 
     - name: Pobierz plik .deb GLPI Agent
       get_url:
