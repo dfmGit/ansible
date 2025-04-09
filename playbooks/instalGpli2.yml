@@ -33,8 +33,8 @@
         dest: "/tmp/glpi-agent_1.13-1_all.deb"
 
     - name: Install prince
-        apt:
-          deb: /tmp/glpi-agent_1.13-1_all.deb
+      apt:
+        deb: /tmp/glpi-agent_1.13-1_all.deb
 
     - name: Dodaj lub zaktualizuj wpis server w pliku agent.cfg
       ansible.builtin.lineinfile:
