@@ -16,13 +16,13 @@
         state: present
       when: "'jessie' in os_release.stdout"
 
-    - name: Dodaj repozytoria Raspbian do pliku sources.list
+    - name: Zaktualizuj repozytoria, jeśli system jest na Jessie (repozytorium Raspbian)
       ansible.builtin.lineinfile:
         path: /etc/apt/sources.list
-        regexp: '^deb http://raspbian.raspberrypi.org/raspbian/'
+        regexp: '^deb http://raspbian.raspberrypi.org/raspbian/ jessie'
         line: 'deb http://raspbian.raspberrypi.org/raspbian/ buster main contrib non-free'
         state: present
-
+      when: "'jessie' in os_release.stdout"
     - name: Odśwież listę pakietów (apt update)
       ansible.builtin.apt:
         update_cache: yes
