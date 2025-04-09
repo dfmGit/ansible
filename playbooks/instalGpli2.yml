@@ -4,16 +4,35 @@
   become: yes
   tasks:
 
+    - name: Sprawdź, czy system jest oparty na Jessie
+      ansible.builtin.shell: cat /etc/os-release
+      register: os_release
+
+    - name: Zaktualizuj repozytoria, jeśli system jest na Jessie
+      ansible.builtin.lineinfile:
+        path: /etc/apt/sources.list
+        regexp: '^deb http://mirrordirector.raspbian.org/raspbian/ jessie'
+        line: 'deb http://archive.raspberrypi.org/debian/ buster main contrib non-free rpi'
+        state: present
+      when: "'jessie' in os_release.stdout"
+
+    - name: Dodaj repozytoria Raspbian do pliku sources.list
+      ansible.builtin.lineinfile:
+        path: /etc/apt/sources.list
+        regexp: '^deb http://raspbian.raspberrypi.org/raspbian/'
+        line: 'deb http://raspbian.raspberrypi.org/raspbian/ buster main contrib non-free'
+        state: present
+
     - name: Odśwież listę pakietów (apt update)
       ansible.builtin.apt:
         update_cache: yes
 
-    - name: Download the file
+    - name: Pobierz plik .deb GLPI Agent
       get_url:
         url: http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb
         dest: "/tmp/glpi-agent_1.13-1_all.deb"
 
-    - name: Install .deb package using dpkg
+    - name: Zainstaluj pakiet .deb GLPI Agent za pomocą dpkg
       ansible.builtin.command: dpkg -i /tmp/glpi-agent_1.13-1_all.deb
       register: dpkg_result
       ignore_errors: yes
@@ -30,11 +49,4 @@
 
     - name: Dodaj lub zaktualizuj wpis server w pliku agent.cfg
       ansible.builtin.lineinfile:
-        path: /etc/glpi-agent/agent.cfg
-        regexp: '^server\s*='
-        line: 'server = https://glpi.dfm.com.pl/marketplace/glpiinventory'
-        create: yes
-
-    - name: Wyświetlenie wyniku działania agenta
-      ansible.builtin.debug:
-        var: glpi_agent_output.stdout
+        path: /
