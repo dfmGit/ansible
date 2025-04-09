@@ -24,18 +24,59 @@
         state: present
       when: "'jessie' in os_release.stdout"
 
-     
-  
+    - name: Odśwież listę pakietów (apt update)
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Zainstaluj wymagane zależności
+      ansible.builtin.apt:
+        name:
+          - libnet-cups-perl
+          - libnet-ip-perl
+          - libnet-ssh2-perl
+          - libwww-perl
+          - libparse-edid-perl
+          - libproc-daemon-perl
+          - libparallel-forkmanager-perl
+          - libuniversal-require-perl
+          - libfile-which-perl
+          - libxml-libxml-perl
+          - libyaml-perl
+          - libcpanel-json-xs-perl
+          - pciutils
+          - libhttp-daemon-perl
+          - libyaml-tiny-perl
+          - libossp-uuid-perl
+          - libdatetime-perl
+          - libsocket-getaddrinfo-perl
+        state: present
+      become: yes
 
     - name: Pobierz plik .deb GLPI Agent
       get_url:
         url: http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb
         dest: "/tmp/glpi-agent_1.13-1_all.deb"
 
-    - name: Install prince
-      apt:
-        deb: /tmp/glpi-agent_1.13-1_all.deb
+    - name: Zainstaluj pakiet .deb GLPI Agent za pomocą dpkg
+      ansible.builtin.command: dpkg -i /tmp/glpi-agent_1.13-1_all.deb
+      register: dpkg_result
+      ignore_errors: yes
+
+    - name: Napraw brakujące zależności po dpkg
+      ansible.builtin.command:
+        cmd: apt-get install -f -y
+      when: dpkg_result.rc != 0
+      become: yes
+
+    - name: Uruchomienie GLPI Agent z parametrem --server
+      ansible.builtin.command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
+      register: glpi_agent_output
+      changed_when: false
+      ignore_errors: yes
 
     - name: Dodaj lub zaktualizuj wpis server w pliku agent.cfg
       ansible.builtin.lineinfile:
-        path: /
+        path: /etc/glpi-agent/agent.cfg
+        regexp: '^server\s*='
+        line: 'server = https://glpi.dfm.com.pl/marketplace/glpiinventory'
+        create: yes
