@@ -31,9 +31,24 @@
         url: http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb
         dest: "/tmp/glpi-agent_1.13-1_all.deb"
 
-    - name: Zainstaluj pakiet .deb i jego zależności
+    - name: Zainstaluj pakiet .deb za pomocą dpkg
+      ansible.builtin.command: dpkg -i /tmp/glpi-agent_1.13-1_all.deb
+      register: dpkg_result
+      ignore_errors: yes
+
+    - name: Napraw brakujące zależności po dpkg
       ansible.builtin.apt:
-        deb: /tmp/glpi-agent_1.13-1_all.deb
+        upgrade: dist
+        force: yes
+        allow_unauthenticated: yes
+        update_cache: yes
+        autoremove: yes
+        autoclean: yes
+      when: dpkg_result.rc != 0
+
+    - name: Wymuś naprawę zależności (apt-get -f install)
+      ansible.builtin.command: apt-get install -f -y
+      when: dpkg_result.rc != 0
 
     - name: Uruchomienie GLPI Agent z parametrem --server
       ansible.builtin.command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
