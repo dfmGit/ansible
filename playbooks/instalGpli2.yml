@@ -23,7 +23,8 @@
         line: 'deb http://raspbian.raspberrypi.org/raspbian/ buster main contrib non-free'
         state: present
       when: "'jessie' in os_release.stdout"
-      
+
+     
   
 
     - name: Pobierz plik .deb GLPI Agent
@@ -31,30 +32,9 @@
         url: http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb
         dest: "/tmp/glpi-agent_1.13-1_all.deb"
 
-    - name: Zainstaluj pakiet .deb za pomocą dpkg
-      ansible.builtin.command: dpkg -i /tmp/glpi-agent_1.13-1_all.deb
-      register: dpkg_result
-      ignore_errors: yes
-
-    - name: Napraw brakujące zależności po dpkg
-      ansible.builtin.apt:
-        upgrade: dist
-        force: yes
-        allow_unauthenticated: yes
-        update_cache: yes
-        autoremove: yes
-        autoclean: yes
-      when: dpkg_result.rc != 0
-
-    - name: Wymuś naprawę zależności (apt-get -f install)
-      ansible.builtin.command: apt-get install -f -y
-      when: dpkg_result.rc != 0
-
-    - name: Uruchomienie GLPI Agent z parametrem --server
-      ansible.builtin.command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
-      register: glpi_agent_output
-      changed_when: false
-      ignore_errors: yes
+    - name: Install prince
+        apt:
+          deb: /tmp/glpi-agent_1.13-1_all.deb
 
     - name: Dodaj lub zaktualizuj wpis server w pliku agent.cfg
       ansible.builtin.lineinfile:
