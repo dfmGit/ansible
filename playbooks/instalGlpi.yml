@@ -12,12 +12,10 @@
       register: dpkg_result
       ignore_errors: yes
 
-    - name: Fix broken dependencies after dpkg install
-      ansible.builtin.apt:
-        upgrade: dist
-        update_cache: yes
-        force: yes
+    - name: Napraw zależności po dpkg
+      ansible.builtin.command: apt install -f -y
       when: dpkg_result.rc != 0
+      
     - name: Uruchomienie GLPI Agent z parametrem --server
       ansible.builtin.command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
       register: glpi_agent_output
