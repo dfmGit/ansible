@@ -13,8 +13,8 @@
     - name: Wyrzucenie błędu, jeśli GLPI Agent jest zainstalowany
       fail:
         msg: "GLPI Agent jest już zainstalowany. Playbook zakończony."
-      when: glpi_agent_check.rc == 0
-
+      when: glpi_agent_check.rc is defined and glpi_agent_check.rc == 0
+      
     - name: Sprawdź, czy system to Jessie
       ansible.builtin.shell: cat /etc/os-release
       register: os_release
