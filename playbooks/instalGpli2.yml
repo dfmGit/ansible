@@ -55,13 +55,6 @@
     - name: Wyczyść cache APT
       ansible.builtin.command: apt-get clean
 
-    - name: Doinstaluj python-apt (jeśli potrzebny)
-      ansible.builtin.apt:
-        name: python-apt
-        state: present
-        install_recommends: no
-      ignore_errors: yes
-
     - name: Uruchomienie GLPI Agent z parametrem --server
       ansible.builtin.command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
       register: glpi_agent_output
