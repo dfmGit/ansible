@@ -9,7 +9,7 @@ def generuj_hosty(prefix):
             yield f"{prefix}.{subnet}.{i}"
 
 # Prefiksy do wygenerowania
-prefixy = ["10.239"]
+prefixy = ["10.237"]
 
 # Inicjalizacja grup jako defaultdict z listami
 grupy = defaultdict(list)
@@ -37,6 +37,8 @@ for prefix in prefixy:
             grupy["DM"].append(host)
         elif host.startswith("10.238.") or host.startswith("10.239."):
             grupy["RE"].append(host)
+        elif host.startswith("10.237.") or host.startswith("10.237."):
+            grupy["OL"].append(host)    
 
 # Budowanie inwentarza
 inventory = {
@@ -49,6 +51,7 @@ inventory = {
     "Metal":     {"hosts": grupy["Metal"]},
     "DM":        {"hosts": grupy["DM"]},
     "RE":        {"hosts": grupy["RE"]},
+    "OL":        {"hosts": grupy["OL"]},
 }
 
 # Wydruk JSON
