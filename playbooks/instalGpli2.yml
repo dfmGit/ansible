@@ -2,7 +2,6 @@
 - name: Install and configure GLPI Agent
   hosts: all
   become: yes
-  poll: 0  
   tasks:
 
     - name: Sprawdź, czy system to Jessie
