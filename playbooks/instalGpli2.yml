@@ -4,6 +4,16 @@
   become: yes
   tasks:
 
+    - name: Sprawdzenie, czy GLPI Agent jest zainstalowany
+      command: which glpi-agent
+      register: glpi_agent_check
+      ignore_errors: yes
+
+    - name: Wyrzucenie błędu, jeśli GLPI Agent jest zainstalowany
+      fail:
+        msg: "GLPI Agent jest już zainstalowany. Playbook zakończony."
+      when: glpi_agent_check.rc == 0
+
     - name: Sprawdź, czy system to Jessie
       ansible.builtin.shell: cat /etc/os-release
       register: os_release
