@@ -2,7 +2,6 @@
 - name: Install and configure GLPI Agent
   hosts: all
   become: yes
-  failed_when: false  
   tasks:
 
     - name: Sprawdzenie, czy GLPI Agent jest zainstalowany
