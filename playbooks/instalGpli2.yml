@@ -47,6 +47,11 @@
     - name: Napraw brakujące zależności (apt-get -f install)
       ansible.builtin.command: apt-get install -f -y
       when: dpkg_result.rc != 0
+      register: apt_fix_result
+
+    - name: Ponowna instalacja GLPI Agent jeśli wcześniejsza się nie powiodła
+      ansible.builtin.command: dpkg -i /tmp/glpi-agent_1.13-1_all.deb
+      when: dpkg_result.rc != 0 and apt_fix_result.rc == 0
 
     - name: Napraw nieskonfigurowane pakiety (dpkg --configure -a)
       ansible.builtin.command: dpkg --configure -a
