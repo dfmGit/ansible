@@ -1,0 +1,92 @@
+---
+- name: Install and configure GLPI Agent
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Sprawdzenie, czy GLPI Agent jest zainstalowany
+      command: which glpi-agent
+      register: glpi_agent_check
+      ignore_errors: yes
+
+    - name: Wyrzucenie błędu, jeśli GLPI Agent jest zainstalowany
+      fail:
+        msg: "GLPI Agent jest już zainstalowany. Playbook zakończony."
+      when: glpi_agent_check.rc is defined and glpi_agent_check.rc == 0
+      
+    - name: Sprawdź, czy system to Jessie
+      ansible.builtin.shell: cat /etc/os-release
+      register: os_release
+
+    - name: Zaktualizuj sources.list dla Jessie (raspbian)
+      ansible.builtin.lineinfile:
+        path: /etc/apt/sources.list
+        regexp: '^deb http://raspbian.raspberrypi.org/raspbian/'
+        line: 'deb http://legacy.raspbian.org/raspbian/ jessie main contrib non-free rpi'
+        state: present
+      when: "'jessie' in os_release.stdout"
+
+    - name: Zaktualizuj sources.list dla Buster (raspbian)
+      ansible.builtin.lineinfile:
+        path: /etc/apt/sources.list
+        regexp: '^deb http://raspbian.raspberrypi.org/raspbian/'
+        line: 'deb http://legacy.raspbian.org/raspbian/ buster main contrib non-free rpi'
+        state: present
+      when: "'buster' in os_release.stdout"  
+
+
+    - name: Usuń błędny plik konfiguracji APT (jeśli istnieje)
+      ansible.builtin.file:
+        path: /etc/apt/apt.conf.d/99releaseinfo
+        state: absent
+
+    - name: Usuń uszkodzone listy pakietów
+      ansible.builtin.file:
+        path: /var/lib/apt/lists
+        state: absent
+
+    
+    - name: Odśwież listę pakietów
+      ansible.builtin.apt:
+        update_cache: yes
+      register: dpkg_result
+      ignore_errors: yes   
+
+    - name: Pobierz plik .deb GLPI Agent
+      ansible.builtin.get_url:
+        url: http://loaderwww.dfm.biz.pl/rpi/skrypty/glpi-agent_1.13-1_all.deb
+        dest: /tmp/glpi-agent_1.13-1_all.deb
+
+    - name: Zainstaluj GLPI Agent .deb przez dpkg
+      ansible.builtin.command: dpkg -i /tmp/glpi-agent_1.13-1_all.deb
+      register: dpkg_result
+      ignore_errors: yes
+
+    - name: Napraw brakujące zależności (apt-get -f install)
+      ansible.builtin.command: apt-get install -f -y
+      when: dpkg_result.rc != 0
+      register: apt_fix_result
+
+    - name: Ponowna instalacja GLPI Agent jeśli wcześniejsza się nie powiodła
+      ansible.builtin.command: dpkg -i /tmp/glpi-agent_1.13-1_all.deb
+      when: dpkg_result.rc != 0 and apt_fix_result.rc == 0
+
+    - name: Napraw nieskonfigurowane pakiety (dpkg --configure -a)
+      ansible.builtin.command: dpkg --configure -a
+      ignore_errors: yes
+
+    - name: Wyczyść cache APT
+      ansible.builtin.command: apt-get clean
+
+    - name: Uruchomienie GLPI Agent z parametrem --server
+      ansible.builtin.command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
+      register: glpi_agent_output
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Dodaj lub zaktualizuj wpis server w pliku agent.cfg
+      ansible.builtin.lineinfile:
+        path: /etc/glpi-agent/agent.cfg
+        regexp: '^server='
+        line: 'server=https://glpi.dfm.com.pl/marketplace/glpiinventory'
+        create: yes

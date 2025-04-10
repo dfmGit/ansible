@@ -1,0 +1,39 @@
+---
+- name: Doklejenie adresu IP do nazwy hosta
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    - name: Ustawienie faktu z adresem IP
+      set_fact:
+        ip_address: "{{ ansible_default_ipv4.address }}"
+
+    - name: Utworzenie nowej nazwy hosta z dołączonym adresem IP
+      set_fact:
+        new_hostname: "rpi-{{ ip_address | replace('.', '-') }}"
+
+    - name: Zmiana nazwy hosta na nową
+      ansible.builtin.hostname:
+        name: "{{ new_hostname }}"
+
+    - name: Aktualizacja pliku /etc/hosts (opcjonalnie)
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^(127\.0\.1\.1\s+).*'
+        line: "127.0.1.1   {{ new_hostname }}"
+        backup: yes
+      when: ansible_distribution != 'Debian'
+
+    - name: Upewnij się, że plik /etc/hosts istnieje
+      file:
+        path: /etc/hosts
+        state: touch
+
+    - name: Popraw hostname w linii 127.0.1.1
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s+.*'
+        line: "127.0.1.1 {{ ansible_hostname }}"
+        state: present
+        backrefs: yes

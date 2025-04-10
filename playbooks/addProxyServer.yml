@@ -1,0 +1,13 @@
+---
+- name: Ustawienie proxy APT
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Tworzenie pliku APT proxy
+      copy:
+        dest: /etc/apt/apt.conf.d/01proxy
+        content: 'Acquire::http::Proxy "http://10.10.10.75:3142";'
+        owner: root
+        group: root
+        mode: '0644'
