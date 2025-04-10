@@ -11,18 +11,11 @@
     - name: Zaktualizuj sources.list dla Jessie (raspbian)
       ansible.builtin.lineinfile:
         path: /etc/apt/sources.list
-        regexp: '^deb http://raspbian.raspberrypi.org/raspbian/ jessie'
-        line: 'deb http://raspbian.raspberrypi.org/raspbian/ buster main contrib non-free'
+        regexp: '^deb http://raspbian.raspberrypi.org/raspbian/'
+        line: 'deb http://legacy.raspbian.org/raspbian/ jessie main contrib non-free rpi'
         state: present
       when: "'jessie' in os_release.stdout"
 
-    - name: Zaktualizuj sources.list dla Jessie (archive)
-      ansible.builtin.lineinfile:
-        path: /etc/apt/sources.list
-        regexp: '^deb http://mirrordirector.raspbian.org/raspbian/ jessie'
-        line: 'deb http://archive.raspberrypi.org/debian/ buster main'
-        state: present
-      when: "'jessie' in os_release.stdout"
 
     - name: Usuń błędny plik konfiguracji APT (jeśli istnieje)
       ansible.builtin.file:
@@ -34,18 +27,7 @@
         path: /var/lib/apt/lists
         state: absent
 
-    - name: Utwórz pusty katalog list (APT)
-      ansible.builtin.file:
-        path: /var/lib/apt/lists
-        state: directory
-        mode: '0755'
-
-    - name: Wyłącz ostrzeżenie o zmianie Suite (Release Info)
-      ansible.builtin.copy:
-        dest: /etc/apt/apt.conf.d/99disable-releaseinfo-change
-        content: 'Acquire::AllowReleaseInfoChange "true";'
-        mode: '0644'
-      
+    
     - name: Odśwież listę pakietów
       ansible.builtin.apt:
         update_cache: yes
