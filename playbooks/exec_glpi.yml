@@ -13,12 +13,12 @@
         failed_hosts: "{{ failed_hosts | default([]) + [inventory_hostname] }}"
       when: glpi_agent_output.rc != 0
 
-    - name: Zapisanie danych do pliku Excel
-      community.general.xlsx:
-        path: "/var/glpi_failed_hosts.xlsx"
-        sheet_name: "Failed Hosts"
-        data:
-          - [ "Host", "Error Output" ]
-          - "{{ failed_hosts | map('regex_replace', '^', item) }}"  # Optional to format as needed
-        append: yes
+    - name: Zapisanie hostów do pliku CSV
+      ansible.builtin.copy:
+        content: |
+          Host,Error Output
+          {% for host in failed_hosts %}
+          {{ host }},{{ glpi_agent_output.stderr }}
+          {% endfor %}
+        dest: "/var/glpi_failed_hosts.csv"
       when: failed_hosts is defined and failed_hosts | length > 0
