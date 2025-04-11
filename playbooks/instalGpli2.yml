@@ -38,11 +38,11 @@
         state: absent
 
     
-    - name: Odśwież listę pakietów
-      ansible.builtin.apt:
-        update_cache: yes
-      register: dpkg_result
-      ignore_errors: yes   
+    #- name: Odśwież listę pakietów
+    #  ansible.builtin.apt:
+    #    update_cache: yes
+    #  register: dpkg_result
+    #  ignore_errors: yes   
 
     - name: Pobierz plik .deb GLPI Agent
       ansible.builtin.get_url:
