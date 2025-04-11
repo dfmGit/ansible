@@ -26,6 +26,14 @@
         state: present
       when: "'buster' in os_release.stdout"  
 
+    - name: Zaktualizuj sources.list dla Buster (stretch)
+      ansible.builtin.lineinfile:
+        path: /etc/apt/sources.list
+        regexp: '^deb http://raspbian.raspberrypi.org/raspbian/'
+        line: 'deb http://legacy.raspbian.org/raspbian/ stretch main contrib non-free rpi'
+        state: present
+      when: "'stretch' in os_release.stdout"  
+
 
     - name: Usuń błędny plik konfiguracji APT (jeśli istnieje)
       ansible.builtin.file:
