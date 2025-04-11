@@ -1,0 +1,24 @@
+---
+- name: Uruchomienie GLPI Agent i zapisanie hostów z błędami
+  hosts: all
+  tasks:
+    - name: Uruchomienie GLPI Agent z parametrem --server
+      ansible.builtin.command: glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory
+      register: glpi_agent_output
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Zbieranie hostów, które zwróciły błąd
+      set_fact:
+        failed_hosts: "{{ failed_hosts | default([]) + [inventory_hostname] }}"
+      when: glpi_agent_output.rc != 0
+
+    - name: Zapisanie danych do pliku Excel
+      community.general.xlsx:
+        path: "/var/glpi_failed_hosts.xlsx"
+        sheet_name: "Failed Hosts"
+        data:
+          - [ "Host", "Error Output" ]
+          - "{{ failed_hosts | map('regex_replace', '^', item) }}"  # Optional to format as needed
+        append: yes
+      when: failed_hosts is defined and failed_hosts | length > 0
