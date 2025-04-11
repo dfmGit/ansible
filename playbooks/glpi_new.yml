@@ -1,0 +1,22 @@
+---
+- name: Instalacja i uruchomienie glpi-agent
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Aktualizacja listy pakietów (apt update)
+      apt:
+        update_cache: yes
+      tags: update
+
+    - name: Instalacja pakietu glpi-agent z użyciem --fix-broken
+      shell: "apt --fix-broken install ./glpi-agent_1.13-1_all.deb -y"
+      args:
+        chdir: /tmp
+      tags: install
+
+    - name: Uruchomienie glpi-agent z konfiguracją serwera
+      shell: "glpi-agent --server https://glpi.dfm.com.pl/marketplace/glpiinventory"
+      args:
+        chdir: /tmp
+      tags: start
