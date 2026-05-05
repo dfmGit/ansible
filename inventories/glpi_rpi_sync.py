@@ -2,6 +2,10 @@ import os
 import sys
 import json
 import requests
+import urllib3
+
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 def get_env(name):
@@ -26,9 +30,14 @@ def init_session():
         "Authorization": "user_token " + USER_TOKEN
     }
 
-    response = requests.get(glpi_url("/initSession"), headers=headers, timeout=30)
-    response.raise_for_status()
+    response = requests.get(
+        glpi_url("/initSession"),
+        headers=headers,
+        timeout=30,
+        verify=False
+    )
 
+    response.raise_for_status()
     data = response.json()
 
     if "session_token" not in data:
@@ -45,7 +54,12 @@ def kill_session(session_token):
     }
 
     try:
-        requests.get(glpi_url("/killSession"), headers=headers, timeout=30)
+        requests.get(
+            glpi_url("/killSession"),
+            headers=headers,
+            timeout=30,
+            verify=False
+        )
     except Exception:
         pass
 
@@ -66,7 +80,8 @@ def get_all_computers(session_token):
             glpi_url("/Computer"),
             headers=headers,
             params={"range": str(start) + "-" + str(end)},
-            timeout=60
+            timeout=60,
+            verify=False
         )
 
         response.raise_for_status()
