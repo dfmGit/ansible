@@ -1,0 +1,12 @@
+- name: Pobierz Raspberry z GLPI
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Uruchom skrypt GLPI
+      command: python3 "{{ playbook_dir }}/glpi_rpi_sync.py"
+      environment:
+        GLPI_URL: "{{ glpi_url }}"
+        GLPI_APP_TOKEN: "{{ glpi_app_token }}"
+        GLPI_USER_TOKEN: "{{ glpi_user_token }}"
+        GLPI_ONLY_PREFIX: "rpi-"
