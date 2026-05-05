@@ -22,7 +22,7 @@ ONLY_PREFIX = os.environ.get("GLPI_ONLY_PREFIX", "rpi-")
 
 
 def glpi_url(path):
-    return GLPI_URL + "/apirest.php" + path
+    return GLPI_URL +  path
 
 
 def init_session():
