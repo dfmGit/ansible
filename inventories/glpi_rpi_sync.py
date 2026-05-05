@@ -30,14 +30,22 @@ def init_session():
         "Authorization": "user_token " + USER_TOKEN
     }
 
+    url = glpi_url("/initSession")
+
     response = requests.get(
-        glpi_url("/initSession"),
+        url,
         headers=headers,
         timeout=30,
         verify=False
     )
 
-    response.raise_for_status()
+    if response.status_code >= 400:
+        print("ERROR HTTP:", response.status_code)
+        print("URL:", url)
+        print("ODPOWIEDZ GLPI:")
+        print(response.text)
+        sys.exit(1)
+
     data = response.json()
 
     if "session_token" not in data:
@@ -46,7 +54,6 @@ def init_session():
         sys.exit(1)
 
     return data["session_token"]
-
 
 def kill_session(session_token):
     headers = {
