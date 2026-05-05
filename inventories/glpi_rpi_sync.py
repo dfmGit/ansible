@@ -13,9 +13,7 @@ def get_env(name):
 
 
 GLPI_URL = get_env("GLPI_URL").rstrip("/")
-APP_TOKEN = get_env("GLPI_APP_TOKEN")
 USER_TOKEN = get_env("GLPI_USER_TOKEN")
-
 ONLY_PREFIX = os.environ.get("GLPI_ONLY_PREFIX", "rpi-")
 
 
@@ -25,7 +23,6 @@ def glpi_url(path):
 
 def init_session():
     headers = {
-        "App-Token": APP_TOKEN,
         "Authorization": "user_token " + USER_TOKEN
     }
 
@@ -35,7 +32,7 @@ def init_session():
     data = response.json()
 
     if "session_token" not in data:
-        print("ERROR: Brak session_token w odpowiedzi GLPI")
+        print("ERROR: Brak session_token")
         print(json.dumps(data, indent=2, ensure_ascii=False))
         sys.exit(1)
 
@@ -44,7 +41,6 @@ def init_session():
 
 def kill_session(session_token):
     headers = {
-        "App-Token": APP_TOKEN,
         "Session-Token": session_token
     }
 
@@ -56,7 +52,6 @@ def kill_session(session_token):
 
 def get_all_computers(session_token):
     headers = {
-        "App-Token": APP_TOKEN,
         "Session-Token": session_token
     }
 
@@ -74,11 +69,8 @@ def get_all_computers(session_token):
             timeout=60
         )
 
-        if response.status_code == 206 or response.status_code == 200:
-            data = response.json()
-        else:
-            response.raise_for_status()
-            data = response.json()
+        response.raise_for_status()
+        data = response.json()
 
         if not isinstance(data, list):
             print("ERROR: GLPI nie zwróciło listy komputerów")
@@ -99,9 +91,7 @@ def get_all_computers(session_token):
 
 
 def name_to_ip(name):
-    prefix = ONLY_PREFIX.lower()
-
-    if not name.lower().startswith(prefix):
+    if not name.lower().startswith(ONLY_PREFIX.lower()):
         return ""
 
     raw = name[len(ONLY_PREFIX):]
@@ -136,15 +126,13 @@ def main():
             if not name.lower().startswith(ONLY_PREFIX.lower()):
                 continue
 
-            item = {
+            result.append({
                 "id": computer.get("id", ""),
                 "name": name,
                 "ip": name_to_ip(name),
                 "serial": computer.get("serial", ""),
                 "otherserial": computer.get("otherserial", "")
-            }
-
-            result.append(item)
+            })
 
         print("Raspberry znalezione w GLPI:")
         print("--------------------------------")
