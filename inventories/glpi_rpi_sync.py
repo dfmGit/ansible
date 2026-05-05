@@ -27,7 +27,9 @@ def glpi_url(path):
 
 def init_session():
     headers = {
-        "Authorization": "user_token " + USER_TOKEN
+        "Authorization": "user_token " + USER_TOKEN,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
     }
 
     url = glpi_url("/initSession")
@@ -39,11 +41,12 @@ def init_session():
         verify=False
     )
 
+    print("URL:", url)
+    print("HTTP STATUS:", response.status_code)
+    print("ODPOWIEDZ GLPI:")
+    print(response.text)
+
     if response.status_code >= 400:
-        print("ERROR HTTP:", response.status_code)
-        print("URL:", url)
-        print("ODPOWIEDZ GLPI:")
-        print(response.text)
         sys.exit(1)
 
     data = response.json()
