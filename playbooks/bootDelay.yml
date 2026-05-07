@@ -1,0 +1,55 @@
+---
+- name: Fix USB boot timing on affected Raspberry Pi OS versions
+  hosts: raspberry
+  become: yes
+  gather_facts: yes
+
+  vars:
+    config_file: /boot/firmware/config.txt
+    cmdline_file: /boot/firmware/cmdline.txt
+
+  tasks:
+    - name: Check kernel version
+      command: uname -r
+      register: kernel_version
+      changed_when: false
+
+    - name: Detect if this host is affected
+      set_fact:
+        usb_boot_fix_required: >-
+          {{
+            ansible_distribution == 'Debian'
+            and ansible_distribution_major_version | int >= 12
+            and (
+              kernel_version.stdout is version('6.12', '>=')
+            )
+          }}
+
+    - name: Show decision
+      debug:
+        msg: "USB boot fix required: {{ usb_boot_fix_required }} | OS={{ ansible_distribution }} {{ ansible_distribution_version }} | Kernel={{ kernel_version.stdout }}"
+
+    - name: Ustaw boot_delay=5 w /boot/firmware/config.txt
+      lineinfile:
+        path: "{{ config_file }}"
+        regexp: '^boot_delay='
+        line: 'boot_delay=5'
+        create: yes
+        backup: yes
+      when: usb_boot_fix_required
+      notify: reboot raspberry
+
+    - name: Dopisz usbcore.autosuspend=-1 do /boot/firmware/cmdline.txt jeżeli brak
+      replace:
+        path: "{{ cmdline_file }}"
+        regexp: '^(?!.*\busbcore\.autosuspend=-1\b)(.+)$'
+        replace: '\1 usbcore.autosuspend=-1'
+        backup: yes
+      when: usb_boot_fix_required
+      notify: reboot raspberry
+
+  handlers:
+    - name: reboot raspberry
+      reboot:
+        msg: "Restart po zmianie parametrów USB boot"
+        reboot_timeout: 300
