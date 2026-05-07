@@ -1,6 +1,6 @@
 ---
 - name: Fix USB boot timing on affected Raspberry Pi OS versions
-  hosts: raspberry
+  hosts: all
   become: yes
   gather_facts: yes
 
