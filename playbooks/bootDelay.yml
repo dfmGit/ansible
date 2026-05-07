@@ -35,7 +35,7 @@
         regexp: '^boot_delay='
         line: 'boot_delay=5'
         create: yes
-        backup: yes
+        backup: no
       when: usb_boot_fix_required
       notify: reboot raspberry
 
@@ -44,7 +44,7 @@
         path: "{{ cmdline_file }}"
         regexp: '^(?!.*\busbcore\.autosuspend=-1\b)(.+)$'
         replace: '\1 usbcore.autosuspend=-1'
-        backup: yes
+        backup: no
       when: usb_boot_fix_required
       notify: reboot raspberry
 
