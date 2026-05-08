@@ -1,0 +1,52 @@
+    - name: Ustaw boot_delay=5 w /boot/firmware/config.txt
+      lineinfile:
+        path: "{{ config_file }}"
+        regexp: '^boot_delay='
+        line: 'boot_delay=5'
+        create: yes
+        backup: no
+      when: usb_boot_fix_required
+      notify: reboot raspberry
+
+    - name: Dopisz usbcore.autosuspend=-1 do /boot/firmware/cmdline.txt jeżeli brak
+      replace:
+        path: "{{ cmdline_file }}"
+        regexp: '^(?!.*\busbcore\.autosuspend=-1\b)(.+)$'
+        replace: '\1 usbcore.autosuspend=-1'
+        backup: no
+      when: usb_boot_fix_required
+      notify: reboot raspberry
+
+    - name: Install uhubctl
+      apt:
+        name: uhubctl
+        state: present
+        update_cache: yes
+      when: usb_boot_fix_required
+
+    - name: Create USB reset script
+      copy:
+        dest: /usr/local/bin/reset_usb.sh
+        owner: root
+        group: root
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          sleep 10
+
+          /usr/sbin/uhubctl -l 1-1 -a 0
+          sleep 5
+          /usr/sbin/uhubctl -l 1-1 -a 1
+
+          echo "0000:01:00.0" > /sys/bus/pci/drivers/xhci_hcd/unbind
+          sleep 2
+          echo "0000:01:00.0" > /sys/bus/pci/drivers/xhci_hcd/bind
+      when: usb_boot_fix_required
+
+    - name: Add reset_usb.sh to root crontab at reboot
+      cron:
+        name: "Reset USB on reboot"
+        special_time: reboot
+        job: "/usr/local/bin/reset_usb.sh"
+        user: root
+      when: usb_boot_fix_required
