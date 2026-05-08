@@ -30,11 +30,11 @@
       debug:
         msg: "USB boot fix required: {{ usb_boot_fix_required }} | OS={{ ansible_distribution }} {{ ansible_distribution_version }} | Kernel={{ kernel_version.stdout }}"
 
-    - name: Ustaw boot_delay=5 w /boot/firmware/config.txt
+    - name: Ustaw boot_delay=10 w /boot/firmware/config.txt
       lineinfile:
         path: "{{ config_file }}"
         regexp: '^boot_delay='
-        line: 'boot_delay=5'
+        line: 'boot_delay=10'
         create: yes
         backup: no
       when: usb_boot_fix_required
