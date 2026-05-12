@@ -1,5 +1,5 @@
 ---
-- name: Install USB bus reset after boot for Raspberry barcode scanner
+- name: Install USB bus reset after boot and reboot Raspberry Pi
   hosts: all
   become: yes
   gather_facts: yes
@@ -9,12 +9,15 @@
     boot_wait_seconds: 5
     usb_off_seconds: 2
     usb_after_on_seconds: 5
+
     reset_script_path: "/usr/local/bin/reset_usb_bus_after_boot.sh"
     reset_log_path: "/var/log/reset_usb_bus_after_boot.log"
     service_name: "reset-usb-bus-after-boot.service"
 
+    do_reboot: true
+
   tasks:
-    - name: Install uhubctl
+    - name: Install required package uhubctl
       apt:
         name: uhubctl
         state: present
@@ -58,7 +61,7 @@
           log "END"
           exit 0
 
-    - name: Create systemd service
+    - name: Create systemd service for early USB reset
       copy:
         dest: "/etc/systemd/system/{{ service_name }}"
         owner: root
@@ -81,29 +84,51 @@
 
           [Install]
           WantedBy=multi-user.target
-      notify:
-        - Reload systemd
 
-    - name: Enable USB reset service
-      systemd:
-        name: "{{ service_name }}"
-        enabled: yes
-        daemon_reload: yes
-
-    - name: Restart USB reset service now
-      systemd:
-        name: "{{ service_name }}"
-        state: restarted
-
-    - name: Show service status command
-      debug:
-        msg:
-          - "Sprawdź po restarcie:"
-          - "systemctl status {{ service_name }}"
-          - "cat {{ reset_log_path }}"
-          - "lsusb"
-
-  handlers:
     - name: Reload systemd
       systemd:
         daemon_reload: yes
+
+    - name: Enable USB reset service on boot
+      systemd:
+        name: "{{ service_name }}"
+        enabled: yes
+
+    - name: Reboot Raspberry Pi after installation
+      reboot:
+        msg: "Reboot after installing USB bus reset service"
+        pre_reboot_delay: 3
+        post_reboot_delay: 20
+        reboot_timeout: 300
+        test_command: "whoami"
+      when: do_reboot | bool
+
+    - name: Check service status after reboot
+      command: "systemctl status {{ service_name }} --no-pager"
+      register: service_status
+      changed_when: false
+      failed_when: false
+
+    - name: Show service status
+      debug:
+        var: service_status.stdout_lines
+
+    - name: Show USB reset log
+      command: "tail -80 {{ reset_log_path }}"
+      register: usb_reset_log
+      changed_when: false
+      failed_when: false
+
+    - name: Print USB reset log
+      debug:
+        var: usb_reset_log.stdout_lines
+
+    - name: Show lsusb
+      command: "lsusb"
+      register: lsusb_result
+      changed_when: false
+      failed_when: false
+
+    - name: Print lsusb
+      debug:
+        var: lsusb_result.stdout_lines
