@@ -1,38 +1,55 @@
 ---
-- name: Install USB bus reset after boot and reboot Raspberry Pi
+- name: Install USB bus reset service for Raspberry Pi barcode scanner
   hosts: all
   become: yes
   gather_facts: yes
 
   vars:
+    service_name: "reset-usb-bus-after-boot.service"
+    service_path: "/etc/systemd/system/reset-usb-bus-after-boot.service"
+    script_path: "/usr/local/bin/reset_usb_bus_after_boot.sh"
+    log_path: "/var/log/reset_usb_bus_after_boot.log"
+
     usb_hub: "1-1"
     boot_wait_seconds: 5
     usb_off_seconds: 2
     usb_after_on_seconds: 5
 
-    reset_script_path: "/usr/local/bin/reset_usb_bus_after_boot.sh"
-    reset_log_path: "/var/log/reset_usb_bus_after_boot.log"
-    service_name: "reset-usb-bus-after-boot.service"
-
     do_reboot: true
 
   tasks:
-    - name: Install required package uhubctl
+    - name: Show target host
+      debug:
+        msg:
+          - "Host: {{ inventory_hostname }}"
+          - "System: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Arch: {{ ansible_architecture }}"
+
+    - name: Install uhubctl
       apt:
         name: uhubctl
         state: present
         update_cache: yes
 
+    - name: Check uhubctl binary
+      command: which uhubctl
+      register: uhubctl_bin
+      changed_when: false
+
+    - name: Show uhubctl path
+      debug:
+        var: uhubctl_bin.stdout
+
     - name: Create USB reset script
       copy:
-        dest: "{{ reset_script_path }}"
+        dest: "{{ script_path }}"
         owner: root
         group: root
         mode: "0755"
         content: |
           #!/bin/bash
 
-          LOG="{{ reset_log_path }}"
+          LOG="{{ log_path }}"
 
           log() {
               echo "$(date '+%F %T') $1" >> "$LOG"
@@ -61,9 +78,9 @@
           log "END"
           exit 0
 
-    - name: Create systemd service for early USB reset
+    - name: Create systemd service
       copy:
-        dest: "/etc/systemd/system/{{ service_name }}"
+        dest: "{{ service_path }}"
         owner: root
         group: root
         mode: "0644"
@@ -78,57 +95,121 @@
           [Service]
           Type=oneshot
           User=root
-          ExecStart={{ reset_script_path }}
+          ExecStart={{ script_path }}
           RemainAfterExit=no
           TimeoutStartSec=60
 
           [Install]
           WantedBy=multi-user.target
 
-    - name: Reload systemd
+    - name: Reload systemd daemon
       systemd:
         daemon_reload: yes
 
-    - name: Enable USB reset service on boot
+    - name: Enable USB reset service
       systemd:
         name: "{{ service_name }}"
         enabled: yes
 
-    - name: Reboot Raspberry Pi after installation
+    - name: Check service file exists
+      stat:
+        path: "{{ service_path }}"
+      register: service_file_check
+
+    - name: Fail if service file was not created
+      fail:
+        msg: "Service file was not created: {{ service_path }}"
+      when: not service_file_check.stat.exists
+
+    - name: Check script file exists
+      stat:
+        path: "{{ script_path }}"
+      register: script_file_check
+
+    - name: Fail if script file was not created
+      fail:
+        msg: "Script file was not created: {{ script_path }}"
+      when: not script_file_check.stat.exists
+
+    - name: Start USB reset service now for test
+      systemd:
+        name: "{{ service_name }}"
+        state: started
+
+    - name: Check systemd unit files
+      shell: "systemctl list-unit-files | grep reset-usb || true"
+      register: unit_files
+      changed_when: false
+
+    - name: Show reset-usb unit files
+      debug:
+        var: unit_files.stdout_lines
+
+    - name: Check service status before reboot
+      command: "systemctl status {{ service_name }} --no-pager"
+      register: service_status_before
+      changed_when: false
+      failed_when: false
+
+    - name: Show service status before reboot
+      debug:
+        var: service_status_before.stdout_lines
+
+    - name: Show log before reboot
+      command: "tail -80 {{ log_path }}"
+      register: log_before
+      changed_when: false
+      failed_when: false
+
+    - name: Print log before reboot
+      debug:
+        var: log_before.stdout_lines
+
+    - name: Reboot Raspberry Pi
       reboot:
-        msg: "Reboot after installing USB bus reset service"
+        msg: "Reboot after installing USB reset service"
         pre_reboot_delay: 3
-        post_reboot_delay: 20
+        post_reboot_delay: 25
         reboot_timeout: 300
         test_command: "whoami"
       when: do_reboot | bool
 
     - name: Check service status after reboot
       command: "systemctl status {{ service_name }} --no-pager"
-      register: service_status
+      register: service_status_after
       changed_when: false
       failed_when: false
 
-    - name: Show service status
+    - name: Show service status after reboot
       debug:
-        var: service_status.stdout_lines
+        var: service_status_after.stdout_lines
 
-    - name: Show USB reset log
-      command: "tail -80 {{ reset_log_path }}"
-      register: usb_reset_log
+    - name: Show journal after reboot
+      command: "journalctl -u {{ service_name }} -b --no-pager"
+      register: journal_after
       changed_when: false
       failed_when: false
 
-    - name: Print USB reset log
+    - name: Print journal after reboot
       debug:
-        var: usb_reset_log.stdout_lines
+        var: journal_after.stdout_lines
 
-    - name: Show lsusb
+    - name: Show USB reset log after reboot
+      command: "tail -120 {{ log_path }}"
+      register: log_after
+      changed_when: false
+      failed_when: false
+
+    - name: Print USB reset log after reboot
+      debug:
+        var: log_after.stdout_lines
+
+    - name: Show lsusb after reboot
       command: "lsusb"
-      register: lsusb_result
+      register: lsusb_after
       changed_when: false
       failed_when: false
 
-    - name: Print lsusb
+    - name: Print lsusb after reboot
       debug:
-        var: lsusb_result.stdout_lines
+        var: lsusb_after.stdout_lines
