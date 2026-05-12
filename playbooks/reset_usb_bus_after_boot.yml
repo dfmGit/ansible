@@ -1,0 +1,109 @@
+---
+- name: Install USB bus reset after boot for Raspberry barcode scanner
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars:
+    usb_hub: "1-1"
+    boot_wait_seconds: 5
+    usb_off_seconds: 2
+    usb_after_on_seconds: 5
+    reset_script_path: "/usr/local/bin/reset_usb_bus_after_boot.sh"
+    reset_log_path: "/var/log/reset_usb_bus_after_boot.log"
+    service_name: "reset-usb-bus-after-boot.service"
+
+  tasks:
+    - name: Install uhubctl
+      apt:
+        name: uhubctl
+        state: present
+        update_cache: yes
+
+    - name: Create USB reset script
+      copy:
+        dest: "{{ reset_script_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+        content: |
+          #!/bin/bash
+
+          LOG="{{ reset_log_path }}"
+
+          log() {
+              echo "$(date '+%F %T') $1" >> "$LOG"
+          }
+
+          log "START - reset magistrali USB po starcie"
+
+          sleep {{ boot_wait_seconds }}
+
+          log "LSUSB before reset:"
+          /usr/bin/lsusb >> "$LOG" 2>&1
+
+          log "USB BUS OFF"
+          /usr/sbin/uhubctl -l {{ usb_hub }} -a off >> "$LOG" 2>&1
+
+          sleep {{ usb_off_seconds }}
+
+          log "USB BUS ON"
+          /usr/sbin/uhubctl -l {{ usb_hub }} -a on >> "$LOG" 2>&1
+
+          sleep {{ usb_after_on_seconds }}
+
+          log "LSUSB after reset:"
+          /usr/bin/lsusb >> "$LOG" 2>&1
+
+          log "END"
+          exit 0
+
+    - name: Create systemd service
+      copy:
+        dest: "/etc/systemd/system/{{ service_name }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Reset USB bus early after boot for barcode scanner
+          DefaultDependencies=no
+          After=local-fs.target systemd-udev-settle.service
+          Wants=systemd-udev-settle.service
+          Before=multi-user.target
+
+          [Service]
+          Type=oneshot
+          User=root
+          ExecStart={{ reset_script_path }}
+          RemainAfterExit=no
+          TimeoutStartSec=60
+
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+        - Reload systemd
+
+    - name: Enable USB reset service
+      systemd:
+        name: "{{ service_name }}"
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Restart USB reset service now
+      systemd:
+        name: "{{ service_name }}"
+        state: restarted
+
+    - name: Show service status command
+      debug:
+        msg:
+          - "Sprawdź po restarcie:"
+          - "systemctl status {{ service_name }}"
+          - "cat {{ reset_log_path }}"
+          - "lsusb"
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
