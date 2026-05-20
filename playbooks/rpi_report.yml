@@ -1,0 +1,288 @@
+---
+- name: Zbierz dane firmware, sprzetu i Linuxa z Raspberry Pi
+  hosts: rpi
+  gather_facts: false
+  ignore_unreachable: true
+
+  tasks:
+    - name: Ustal IP i lokalizacje
+      ansible.builtin.set_fact:
+        rpi_ip: "{{ ansible_host | default(inventory_hostname) }}"
+        rpi_lokalizacja: >-
+          {{
+            'SZWALNIA DM'
+            if (ansible_host | default(inventory_hostname)) is match('^10\\.10\\.')
+            else
+            'SZWALNIA RE'
+            if (ansible_host | default(inventory_hostname)) is match('^10\\.237\\.')
+            else
+            'SZWALNIA OL'
+            if (ansible_host | default(inventory_hostname)) is match('^10\\.238\\.')
+            else
+            'INNE'
+          }}
+
+    - name: Pobierz hostname
+      ansible.builtin.command: hostname
+      register: cmd_hostname
+      changed_when: false
+      failed_when: false
+
+    - name: Pobierz model Raspberry Pi
+      ansible.builtin.shell: |
+        if [ -r /proc/device-tree/model ]; then
+          tr -d '\0' < /proc/device-tree/model
+        else
+          awk -F': ' '/Model/ {print $2}' /proc/cpuinfo | tail -1
+        fi
+      register: cmd_model
+      changed_when: false
+      failed_when: false
+
+    - name: Pobierz revision sprzetu
+      ansible.builtin.shell: |
+        awk -F': ' '/Revision/ {print $2}' /proc/cpuinfo | tail -1
+      register: cmd_revision
+      changed_when: false
+      failed_when: false
+
+    - name: Pobierz serial sprzetu
+      ansible.builtin.shell: |
+        awk -F': ' '/Serial/ {print $2}' /proc/cpuinfo | tail -1
+      register: cmd_serial
+      changed_when: false
+      failed_when: false
+
+    - name: Pobierz wersje systemu Linux
+      ansible.builtin.shell: |
+        if [ -r /etc/os-release ]; then
+          . /etc/os-release
+          echo "$PRETTY_NAME"
+        else
+          uname -a
+        fi
+      register: cmd_linux
+      changed_when: false
+      failed_when: false
+
+    - name: Pobierz wersje kernela
+      ansible.builtin.command: uname -r
+      register: cmd_kernel
+      changed_when: false
+      failed_when: false
+
+    - name: Pobierz architekture
+      ansible.builtin.command: uname -m
+      register: cmd_arch
+      changed_when: false
+      failed_when: false
+
+    - name: Pobierz firmware bootloadera Raspberry Pi
+      ansible.builtin.shell: |
+        if command -v rpi-eeprom-update >/dev/null 2>&1; then
+          rpi-eeprom-update 2>/dev/null | sed 's/\r//g'
+        elif command -v vcgencmd >/dev/null 2>&1; then
+          vcgencmd bootloader_version 2>/dev/null || true
+        else
+          echo "BRAK rpi-eeprom-update/vcgencmd"
+        fi
+      register: cmd_bootloader
+      changed_when: false
+      failed_when: false
+
+    - name: Pobierz firmware GPU / VideoCore
+      ansible.builtin.shell: |
+        if command -v vcgencmd >/dev/null 2>&1; then
+          vcgencmd version 2>/dev/null
+        else
+          echo "BRAK vcgencmd"
+        fi
+      register: cmd_vcgencmd
+      changed_when: false
+      failed_when: false
+
+    - name: Zapisz rekord raportu w hostvars
+      ansible.builtin.set_fact:
+        rpi_report:
+          status: "OK"
+          lokalizacja: "{{ rpi_lokalizacja }}"
+          ip: "{{ rpi_ip }}"
+          hostname: "{{ cmd_hostname.stdout | default('') }}"
+          model: "{{ cmd_model.stdout | default('') }}"
+          revision: "{{ cmd_revision.stdout | default('') }}"
+          serial: "{{ cmd_serial.stdout | default('') }}"
+          linux: "{{ cmd_linux.stdout | default('') }}"
+          kernel: "{{ cmd_kernel.stdout | default('') }}"
+          arch: "{{ cmd_arch.stdout | default('') }}"
+          bootloader: "{{ cmd_bootloader.stdout_lines | default([]) | join(' | ') }}"
+          vcgencmd: "{{ cmd_vcgencmd.stdout_lines | default([]) | join(' | ') }}"
+
+- name: Wygeneruj raport lokalnie
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    report_dir: "{{ playbook_dir }}/raport_rpi"
+    report_csv: "{{ report_dir }}/raport_rpi.csv"
+    report_html: "{{ report_dir }}/raport_rpi.html"
+
+  tasks:
+    - name: Utworz katalog raportu
+      ansible.builtin.file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Wygeneruj raport CSV
+      ansible.builtin.copy:
+        dest: "{{ report_csv }}"
+        mode: "0644"
+        content: |
+          LOKALIZACJA;IP;STATUS;HOSTNAME;MODEL;REVISION;SERIAL;LINUX;KERNEL;ARCH;BOOTLOADER;VCGENCMD
+          {% for h in groups['rpi'] | default([]) %}
+          {% set hv = hostvars[h] %}
+          {% set ip = hv.ansible_host | default(h) %}
+          {% set lok =
+            'SZWALNIA DM' if ip is match('^10\\.10\\.')
+            else
+            'SZWALNIA RE' if ip is match('^10\\.237\\.')
+            else
+            'SZWALNIA OL' if ip is match('^10\\.238\\.')
+            else
+            'INNE'
+          %}
+          {% set r = hv.rpi_report | default({}) %}
+          {{ r.lokalizacja | default(lok) }};{{ r.ip | default(ip) }};{{ r.status | default('BRAK POLACZENIA') }};{{ r.hostname | default('') | string | replace(';', ',') }};{{ r.model | default('') | string | replace(';', ',') }};{{ r.revision | default('') | string | replace(';', ',') }};{{ r.serial | default('') | string | replace(';', ',') }};{{ r.linux | default('') | string | replace(';', ',') }};{{ r.kernel | default('') | string | replace(';', ',') }};{{ r.arch | default('') | string | replace(';', ',') }};{{ r.bootloader | default('') | string | replace(';', ',') }};{{ r.vcgencmd | default('') | string | replace(';', ',') }}
+          {% endfor %}
+
+    - name: Wygeneruj raport HTML
+      ansible.builtin.copy:
+        dest: "{{ report_html }}"
+        mode: "0644"
+        content: |
+          <!doctype html>
+          <html lang="pl">
+          <head>
+            <meta charset="utf-8">
+            <title>Raport Raspberry Pi</title>
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+                font-size: 13px;
+                background: #f5f5f5;
+                margin: 20px;
+              }
+
+              h1 {
+                margin-bottom: 5px;
+              }
+
+              .info {
+                margin-bottom: 15px;
+                color: #555;
+              }
+
+              table {
+                border-collapse: collapse;
+                width: 100%;
+                background: #fff;
+              }
+
+              th, td {
+                border: 1px solid #ccc;
+                padding: 6px 8px;
+                vertical-align: top;
+              }
+
+              th {
+                background: #222;
+                color: #fff;
+                position: sticky;
+                top: 0;
+              }
+
+              tr:nth-child(even) {
+                background: #f0f0f0;
+              }
+
+              .ok {
+                color: green;
+                font-weight: bold;
+              }
+
+              .bad {
+                color: red;
+                font-weight: bold;
+              }
+
+              .small {
+                font-size: 11px;
+                white-space: normal;
+                max-width: 500px;
+                word-break: break-word;
+              }
+            </style>
+          </head>
+          <body>
+            <h1>Raport Raspberry Pi</h1>
+            <div class="info">
+              Wygenerowano przez Ansible.
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Lokalizacja</th>
+                  <th>IP</th>
+                  <th>Status</th>
+                  <th>Hostname</th>
+                  <th>Model</th>
+                  <th>Revision</th>
+                  <th>Serial</th>
+                  <th>Linux</th>
+                  <th>Kernel</th>
+                  <th>Arch</th>
+                  <th>Bootloader / EEPROM</th>
+                  <th>Firmware vcgencmd</th>
+                </tr>
+              </thead>
+              <tbody>
+              {% for h in groups['rpi'] | default([]) %}
+                {% set hv = hostvars[h] %}
+                {% set ip = hv.ansible_host | default(h) %}
+                {% set lok =
+                  'SZWALNIA DM' if ip is match('^10\\.10\\.')
+                  else
+                  'SZWALNIA RE' if ip is match('^10\\.237\\.')
+                  else
+                  'SZWALNIA OL' if ip is match('^10\\.238\\.')
+                  else
+                  'INNE'
+                %}
+                {% set r = hv.rpi_report | default({}) %}
+                {% set status = r.status | default('BRAK POLACZENIA') %}
+                <tr>
+                  <td>{{ r.lokalizacja | default(lok) }}</td>
+                  <td>{{ r.ip | default(ip) }}</td>
+                  <td class="{{ 'ok' if status == 'OK' else 'bad' }}">{{ status }}</td>
+                  <td>{{ r.hostname | default('') }}</td>
+                  <td>{{ r.model | default('') }}</td>
+                  <td>{{ r.revision | default('') }}</td>
+                  <td>{{ r.serial | default('') }}</td>
+                  <td>{{ r.linux | default('') }}</td>
+                  <td>{{ r.kernel | default('') }}</td>
+                  <td>{{ r.arch | default('') }}</td>
+                  <td class="small">{{ r.bootloader | default('') }}</td>
+                  <td class="small">{{ r.vcgencmd | default('') }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </body>
+          </html>
+
+    - name: Pokaz gdzie zapisano raport
+      ansible.builtin.debug:
+        msg:
+          - "CSV:  {{ report_csv }}"
+          - "HTML: {{ report_html }}"
