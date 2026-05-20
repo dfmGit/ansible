@@ -1,32 +1,65 @@
 ---
-- name: Zbierz dane firmware, sprzetu i Linuxa z Raspberry Pi
+- name: Raport Raspberry Pi - firmware, sprzet, Linux
   hosts: all
   gather_facts: false
   ignore_unreachable: true
+
+  vars:
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1"
+    ansible_command_timeout: 20
 
   tasks:
     - name: Ustal IP i lokalizacje
       ansible.builtin.set_fact:
         rpi_ip: "{{ ansible_host | default(inventory_hostname) }}"
         rpi_lokalizacja: >-
-          {{
-            'SZWALNIA DM'
-            if (ansible_host | default(inventory_hostname)) is match('^10\\.10\\.')
-            else
-            'SZWALNIA RE'
-            if (ansible_host | default(inventory_hostname)) is match('^10\\.237\\.')
-            else
-            'SZWALNIA OL'
-            if (ansible_host | default(inventory_hostname)) is match('^10\\.238\\.')
-            else
-            'INNE'
-          }}
+          {% set ip = ansible_host | default(inventory_hostname) %}
+          {% if ip.startswith('10.10.') %}
+          SZWALNIA DM
+          {% elif ip.startswith('10.237.') %}
+          SZWALNIA RE
+          {% elif ip.startswith('10.238.') %}
+          SZWALNIA OL
+          {% else %}
+          INNE
+          {% endif %}
+
+    - name: Pokaz host start
+      ansible.builtin.debug:
+        msg: "Host={{ inventory_hostname }} IP={{ rpi_ip }} Lokalizacja={{ rpi_lokalizacja | trim }}"
+
+    - name: Sprawdz polaczenie SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 8
+        connect_timeout: 5
+        sleep: 1
+      register: ssh_check
+      ignore_errors: true
+
+    - name: Ustaw raport dla hosta bez polaczenia
+      ansible.builtin.set_fact:
+        rpi_report:
+          status: "BRAK POLACZENIA"
+          lokalizacja: "{{ rpi_lokalizacja | trim }}"
+          ip: "{{ rpi_ip }}"
+          inventory_hostname: "{{ inventory_hostname }}"
+          hostname: ""
+          model: ""
+          revision: ""
+          serial: ""
+          linux: ""
+          kernel: ""
+          arch: ""
+          bootloader: ""
+          vcgencmd: ""
+      when: ssh_check is failed
 
     - name: Pobierz hostname
       ansible.builtin.command: hostname
       register: cmd_hostname
       changed_when: false
       failed_when: false
+      when: ssh_check is succeeded
 
     - name: Pobierz model Raspberry Pi
       ansible.builtin.shell: |
@@ -38,6 +71,7 @@
       register: cmd_model
       changed_when: false
       failed_when: false
+      when: ssh_check is succeeded
 
     - name: Pobierz revision sprzetu
       ansible.builtin.shell: |
@@ -45,6 +79,7 @@
       register: cmd_revision
       changed_when: false
       failed_when: false
+      when: ssh_check is succeeded
 
     - name: Pobierz serial sprzetu
       ansible.builtin.shell: |
@@ -52,6 +87,7 @@
       register: cmd_serial
       changed_when: false
       failed_when: false
+      when: ssh_check is succeeded
 
     - name: Pobierz wersje systemu Linux
       ansible.builtin.shell: |
@@ -64,18 +100,21 @@
       register: cmd_linux
       changed_when: false
       failed_when: false
+      when: ssh_check is succeeded
 
     - name: Pobierz wersje kernela
       ansible.builtin.command: uname -r
       register: cmd_kernel
       changed_when: false
       failed_when: false
+      when: ssh_check is succeeded
 
     - name: Pobierz architekture
       ansible.builtin.command: uname -m
       register: cmd_arch
       changed_when: false
       failed_when: false
+      when: ssh_check is succeeded
 
     - name: Pobierz firmware bootloadera Raspberry Pi
       ansible.builtin.shell: |
@@ -89,8 +128,9 @@
       register: cmd_bootloader
       changed_when: false
       failed_when: false
+      when: ssh_check is succeeded
 
-    - name: Pobierz firmware GPU / VideoCore
+    - name: Pobierz firmware GPU VideoCore
       ansible.builtin.shell: |
         if command -v vcgencmd >/dev/null 2>&1; then
           vcgencmd version 2>/dev/null
@@ -100,13 +140,15 @@
       register: cmd_vcgencmd
       changed_when: false
       failed_when: false
+      when: ssh_check is succeeded
 
-    - name: Zapisz rekord raportu w hostvars
+    - name: Ustaw raport dla hosta OK
       ansible.builtin.set_fact:
         rpi_report:
           status: "OK"
-          lokalizacja: "{{ rpi_lokalizacja }}"
+          lokalizacja: "{{ rpi_lokalizacja | trim }}"
           ip: "{{ rpi_ip }}"
+          inventory_hostname: "{{ inventory_hostname }}"
           hostname: "{{ cmd_hostname.stdout | default('') }}"
           model: "{{ cmd_model.stdout | default('') }}"
           revision: "{{ cmd_revision.stdout | default('') }}"
@@ -116,46 +158,55 @@
           arch: "{{ cmd_arch.stdout | default('') }}"
           bootloader: "{{ cmd_bootloader.stdout_lines | default([]) | join(' | ') }}"
           vcgencmd: "{{ cmd_vcgencmd.stdout_lines | default([]) | join(' | ') }}"
+      when: ssh_check is succeeded
 
-- name: Wygeneruj raport lokalnie
-  hosts: localhost
-  gather_facts: false
+    - name: Przygotuj sciezki raportu lokalnie
+      ansible.builtin.set_fact:
+        report_timestamp: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+      run_once: true
+      delegate_to: localhost
 
-  vars:
-    report_dir: "{{ playbook_dir }}/raport_rpi"
-    report_csv: "{{ report_dir }}/raport_rpi.csv"
-    report_html: "{{ report_dir }}/raport_rpi.html"
+    - name: Ustaw katalog raportu
+      ansible.builtin.set_fact:
+        report_dir: "/tmp/raport_rpi_{{ report_timestamp }}"
+        report_csv: "/tmp/raport_rpi_{{ report_timestamp }}/raport_rpi.csv"
+        report_html: "/tmp/raport_rpi_{{ report_timestamp }}/raport_rpi.html"
+      run_once: true
+      delegate_to: localhost
 
-  tasks:
-    - name: Utworz katalog raportu
+    - name: Utworz katalog raportu na AWX
       ansible.builtin.file:
         path: "{{ report_dir }}"
         state: directory
         mode: "0755"
+      run_once: true
+      delegate_to: localhost
 
-    - name: Wygeneruj raport CSV
+    - name: Wygeneruj raport CSV na AWX
       ansible.builtin.copy:
         dest: "{{ report_csv }}"
         mode: "0644"
         content: |
-          LOKALIZACJA;IP;STATUS;HOSTNAME;MODEL;REVISION;SERIAL;LINUX;KERNEL;ARCH;BOOTLOADER;VCGENCMD
-          {% for h in groups['rpi'] | default([]) %}
+          LOKALIZACJA;IP;STATUS;INVENTORY_HOSTNAME;HOSTNAME;MODEL;REVISION;SERIAL;LINUX;KERNEL;ARCH;BOOTLOADER;VCGENCMD
+          {% for h in ansible_play_hosts_all %}
           {% set hv = hostvars[h] %}
           {% set ip = hv.ansible_host | default(h) %}
           {% set lok =
-            'SZWALNIA DM' if ip is match('^10\\.10\\.')
+            'SZWALNIA DM' if ip.startswith('10.10.')
             else
-            'SZWALNIA RE' if ip is match('^10\\.237\\.')
+            'SZWALNIA RE' if ip.startswith('10.237.')
             else
-            'SZWALNIA OL' if ip is match('^10\\.238\\.')
+            'SZWALNIA OL' if ip.startswith('10.238.')
             else
             'INNE'
           %}
           {% set r = hv.rpi_report | default({}) %}
-          {{ r.lokalizacja | default(lok) }};{{ r.ip | default(ip) }};{{ r.status | default('BRAK POLACZENIA') }};{{ r.hostname | default('') | string | replace(';', ',') }};{{ r.model | default('') | string | replace(';', ',') }};{{ r.revision | default('') | string | replace(';', ',') }};{{ r.serial | default('') | string | replace(';', ',') }};{{ r.linux | default('') | string | replace(';', ',') }};{{ r.kernel | default('') | string | replace(';', ',') }};{{ r.arch | default('') | string | replace(';', ',') }};{{ r.bootloader | default('') | string | replace(';', ',') }};{{ r.vcgencmd | default('') | string | replace(';', ',') }}
+          {{ r.lokalizacja | default(lok) | trim }};{{ r.ip | default(ip) }};{{ r.status | default('BRAK DANYCH') }};{{ r.inventory_hostname | default(h) }};{{ r.hostname | default('') | string | replace(';', ',') }};{{ r.model | default('') | string | replace(';', ',') }};{{ r.revision | default('') | string | replace(';', ',') }};{{ r.serial | default('') | string | replace(';', ',') }};{{ r.linux | default('') | string | replace(';', ',') }};{{ r.kernel | default('') | string | replace(';', ',') }};{{ r.arch | default('') | string | replace(';', ',') }};{{ r.bootloader | default('') | string | replace(';', ',') }};{{ r.vcgencmd | default('') | string | replace(';', ',') }}
           {% endfor %}
+      run_once: true
+      delegate_to: localhost
 
-    - name: Wygeneruj raport HTML
+    - name: Wygeneruj raport HTML na AWX
       ansible.builtin.copy:
         dest: "{{ report_html }}"
         mode: "0644"
@@ -169,12 +220,13 @@
               body {
                 font-family: Arial, sans-serif;
                 font-size: 13px;
-                background: #f5f5f5;
+                background: #f4f4f4;
                 margin: 20px;
               }
 
               h1 {
-                margin-bottom: 5px;
+                margin: 0 0 6px 0;
+                font-size: 22px;
               }
 
               .info {
@@ -188,7 +240,8 @@
                 background: #fff;
               }
 
-              th, td {
+              th,
+              td {
                 border: 1px solid #ccc;
                 padding: 6px 8px;
                 vertical-align: top;
@@ -199,6 +252,7 @@
                 color: #fff;
                 position: sticky;
                 top: 0;
+                z-index: 2;
               }
 
               tr:nth-child(even) {
@@ -217,16 +271,19 @@
 
               .small {
                 font-size: 11px;
-                white-space: normal;
-                max-width: 500px;
+                max-width: 520px;
                 word-break: break-word;
+              }
+
+              .nowrap {
+                white-space: nowrap;
               }
             </style>
           </head>
           <body>
             <h1>Raport Raspberry Pi</h1>
             <div class="info">
-              Wygenerowano przez Ansible.
+              Plik wygenerowany przez AWX / Ansible.
             </div>
 
             <table>
@@ -235,6 +292,7 @@
                   <th>Lokalizacja</th>
                   <th>IP</th>
                   <th>Status</th>
+                  <th>Inventory host</th>
                   <th>Hostname</th>
                   <th>Model</th>
                   <th>Revision</th>
@@ -247,24 +305,25 @@
                 </tr>
               </thead>
               <tbody>
-              {% for h in groups['rpi'] | default([]) %}
+              {% for h in ansible_play_hosts_all %}
                 {% set hv = hostvars[h] %}
                 {% set ip = hv.ansible_host | default(h) %}
                 {% set lok =
-                  'SZWALNIA DM' if ip is match('^10\\.10\\.')
+                  'SZWALNIA DM' if ip.startswith('10.10.')
                   else
-                  'SZWALNIA RE' if ip is match('^10\\.237\\.')
+                  'SZWALNIA RE' if ip.startswith('10.237.')
                   else
-                  'SZWALNIA OL' if ip is match('^10\\.238\\.')
+                  'SZWALNIA OL' if ip.startswith('10.238.')
                   else
                   'INNE'
                 %}
                 {% set r = hv.rpi_report | default({}) %}
-                {% set status = r.status | default('BRAK POLACZENIA') %}
+                {% set status = r.status | default('BRAK DANYCH') %}
                 <tr>
-                  <td>{{ r.lokalizacja | default(lok) }}</td>
-                  <td>{{ r.ip | default(ip) }}</td>
+                  <td class="nowrap">{{ r.lokalizacja | default(lok) | trim }}</td>
+                  <td class="nowrap">{{ r.ip | default(ip) }}</td>
                   <td class="{{ 'ok' if status == 'OK' else 'bad' }}">{{ status }}</td>
+                  <td>{{ r.inventory_hostname | default(h) }}</td>
                   <td>{{ r.hostname | default('') }}</td>
                   <td>{{ r.model | default('') }}</td>
                   <td>{{ r.revision | default('') }}</td>
@@ -280,9 +339,21 @@
             </table>
           </body>
           </html>
+      run_once: true
+      delegate_to: localhost
 
-    - name: Pokaz gdzie zapisano raport
+    - name: Pokaz sciezki raportu
       ansible.builtin.debug:
         msg:
-          - "CSV:  {{ report_csv }}"
-          - "HTML: {{ report_html }}"
+          - "Raport CSV:  {{ report_csv }}"
+          - "Raport HTML: {{ report_html }}"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Zapisz sciezki raportu jako AWX artifacts
+      ansible.builtin.set_stats:
+        data:
+          raport_rpi_csv: "{{ report_csv }}"
+          raport_rpi_html: "{{ report_html }}"
+      run_once: true
+      delegate_to: localhost
