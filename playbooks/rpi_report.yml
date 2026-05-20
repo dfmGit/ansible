@@ -1,18 +1,15 @@
 ---
-- name: Przygotuj liste hostow i sprawdz port SSH lokalnie
+- name: Raport Raspberry Pi - firmware, sprzet, Linux
   hosts: all
   gather_facts: false
-  connection: local
   become: false
+  ignore_unreachable: true
+
+  vars:
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1"
+    ansible_command_timeout: 20
 
   tasks:
-    - name: Zapisz liste hostow do raportu
-      ansible.builtin.set_fact:
-        report_hosts: "{{ ansible_play_hosts_all }}"
-      run_once: true
-      delegate_to: localhost
-      delegate_facts: true
-
     - name: Ustal IP i lokalizacje lokalnie
       ansible.builtin.set_fact:
         rpi_ip: "{{ ansible_host | default(inventory_hostname) }}"
@@ -28,11 +25,7 @@
           INNE
           {% endif %}
 
-    - name: Pokaz host
-      ansible.builtin.debug:
-        msg: "Host={{ inventory_hostname }} IP={{ rpi_ip }} Lokalizacja={{ rpi_lokalizacja | trim }}"
-
-    - name: Sprawdz czy port SSH 22 odpowiada
+    - name: Sprawdz lokalnie czy port SSH odpowiada
       ansible.builtin.wait_for:
         host: "{{ rpi_ip }}"
         port: "{{ ansible_port | default(22) }}"
@@ -41,15 +34,16 @@
         state: started
       register: ssh_port_check
       ignore_errors: true
+      delegate_to: localhost
 
     - name: Ustaw status portu SSH
       ansible.builtin.set_fact:
         rpi_ssh_port_open: "{{ ssh_port_check is succeeded }}"
 
-    - name: Ustaw raport dla hosta bez portu SSH
+    - name: Ustaw domyslny raport dla hosta
       ansible.builtin.set_fact:
         rpi_report:
-          status: "BRAK SSH"
+          status: "{{ 'PORT SSH OK' if rpi_ssh_port_open | bool else 'BRAK SSH' }}"
           lokalizacja: "{{ rpi_lokalizacja | trim }}"
           ip: "{{ rpi_ip }}"
           inventory_hostname: "{{ inventory_hostname }}"
@@ -62,26 +56,9 @@
           arch: ""
           bootloader: ""
           vcgencmd: ""
-      when: not rpi_ssh_port_open | bool
 
-
-- name: Zbierz dane z Raspberry Pi przez SSH
-  hosts: all
-  gather_facts: false
-  become: false
-  ignore_unreachable: true
-
-  vars:
-    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1"
-    ansible_command_timeout: 20
-
-  tasks:
-    - name: Pomin hosty bez portu SSH
-      ansible.builtin.meta: end_host
-      when: not hostvars[inventory_hostname].rpi_ssh_port_open | default(false) | bool
-
-    - name: Zbierz dane jednym poleceniem
-      ansible.builtin.shell: |
+    - name: Zbierz dane z RPi jednym poleceniem READ ONLY
+      ansible.builtin.raw: |
         set +e
 
         echo "HOSTNAME=$(hostname 2>/dev/null)"
@@ -109,12 +86,10 @@
         echo "KERNEL=$(uname -r 2>/dev/null)"
         echo "ARCH=$(uname -m 2>/dev/null)"
 
-        if command -v rpi-eeprom-update >/dev/null 2>&1; then
-          BOOTLOADER=$(rpi-eeprom-update 2>/dev/null | tr '\n' ' ' | sed 's/  */ /g')
-        elif command -v vcgencmd >/dev/null 2>&1; then
+        if command -v vcgencmd >/dev/null 2>&1; then
           BOOTLOADER=$(vcgencmd bootloader_version 2>/dev/null | tr '\n' ' ' | sed 's/  */ /g')
         else
-          BOOTLOADER="BRAK rpi-eeprom-update/vcgencmd"
+          BOOTLOADER="BRAK vcgencmd"
         fi
         echo "BOOTLOADER=$BOOTLOADER"
 
@@ -127,6 +102,9 @@
       register: rpi_collect
       changed_when: false
       failed_when: false
+      ignore_errors: true
+      ignore_unreachable: true
+      when: rpi_ssh_port_open | bool
 
     - name: Ustaw raport dla hosta z bledem SSH
       ansible.builtin.set_fact:
@@ -144,7 +122,10 @@
           arch: ""
           bootloader: ""
           vcgencmd: ""
-      when: rpi_collect is failed or rpi_collect.unreachable | default(false)
+      when:
+        - rpi_ssh_port_open | bool
+        - rpi_collect is defined
+        - rpi_collect.unreachable | default(false)
 
     - name: Ustaw raport dla hosta OK
       ansible.builtin.set_fact:
@@ -162,35 +143,48 @@
           arch: "{{ rpi_collect.stdout | default('') | regex_findall('(?m)^ARCH=(.*)$') | first | default('') }}"
           bootloader: "{{ rpi_collect.stdout | default('') | regex_findall('(?m)^BOOTLOADER=(.*)$') | first | default('') }}"
           vcgencmd: "{{ rpi_collect.stdout | default('') | regex_findall('(?m)^VCGENCMD=(.*)$') | first | default('') }}"
-      when: rpi_collect is succeeded and not rpi_collect.unreachable | default(false)
+      when:
+        - rpi_ssh_port_open | bool
+        - rpi_collect is defined
+        - not rpi_collect.unreachable | default(false)
 
+    - name: Ustaw timestamp raportu
+      ansible.builtin.set_fact:
+        report_timestamp: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+      run_once: true
+      delegate_to: localhost
 
-- name: Wygeneruj raport na AWX
-  hosts: localhost
-  gather_facts: false
-  become: false
+    - name: Ustaw sciezki raportu
+      ansible.builtin.set_fact:
+        report_dir: "/var/lib/awx/projects/raporty/raport_rpi_{{ report_timestamp }}"
+        report_csv: "/var/lib/awx/projects/raporty/raporty_rpi_{{ report_timestamp }}/raport_rpi.csv"
+        report_html: "/var/lib/awx/projects/raporty/raporty_rpi_{{ report_timestamp }}/raport_rpi.html"
+      run_once: true
+      delegate_to: localhost
 
-  vars:
-    report_timestamp: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
-    report_dir: "/tmp/raport_rpi_{{ report_timestamp }}"
-    report_csv: "{{ report_dir }}/raport_rpi.csv"
-    report_html: "{{ report_dir }}/raport_rpi.html"
-    report_hosts: "{{ hostvars['localhost'].report_hosts | default([]) }}"
+    - name: Popraw sciezki raportu
+      ansible.builtin.set_fact:
+        report_dir: "/var/lib/awx/projects/raporty/raport_rpi_{{ report_timestamp }}"
+        report_csv: "/var/lib/awx/projects/raporty/raport_rpi_{{ report_timestamp }}/raport_rpi.csv"
+        report_html: "/var/lib/awx/projects/raporty/raport_rpi_{{ report_timestamp }}/raport_rpi.html"
+      run_once: true
+      delegate_to: localhost
 
-  tasks:
     - name: Utworz katalog raportu
       ansible.builtin.file:
         path: "{{ report_dir }}"
         state: directory
-        mode: "0755"
+        mode: "0777"
+      run_once: true
+      delegate_to: localhost
 
     - name: Wygeneruj raport CSV
       ansible.builtin.copy:
         dest: "{{ report_csv }}"
-        mode: "0644"
+        mode: "0666"
         content: |
           LOKALIZACJA;IP;STATUS;INVENTORY_HOSTNAME;HOSTNAME;MODEL;REVISION;SERIAL;LINUX;KERNEL;ARCH;BOOTLOADER;VCGENCMD
-          {% for h in report_hosts %}
+          {% for h in ansible_play_hosts_all %}
           {% set hv = hostvars[h] %}
           {% set ip = hv.rpi_ip | default(hv.ansible_host | default(h)) %}
           {% set lok =
@@ -205,11 +199,13 @@
           {% set r = hv.rpi_report | default({}) %}
           {{ r.lokalizacja | default(lok) | trim }};{{ r.ip | default(ip) }};{{ r.status | default('BRAK DANYCH') }};{{ r.inventory_hostname | default(h) }};{{ r.hostname | default('') | string | replace(';', ',') }};{{ r.model | default('') | string | replace(';', ',') }};{{ r.revision | default('') | string | replace(';', ',') }};{{ r.serial | default('') | string | replace(';', ',') }};{{ r.linux | default('') | string | replace(';', ',') }};{{ r.kernel | default('') | string | replace(';', ',') }};{{ r.arch | default('') | string | replace(';', ',') }};{{ r.bootloader | default('') | string | replace(';', ',') }};{{ r.vcgencmd | default('') | string | replace(';', ',') }}
           {% endfor %}
+      run_once: true
+      delegate_to: localhost
 
     - name: Wygeneruj raport HTML
       ansible.builtin.copy:
         dest: "{{ report_html }}"
-        mode: "0644"
+        mode: "0666"
         content: |
           <!doctype html>
           <html lang="pl">
@@ -223,30 +219,24 @@
                 background: #f4f4f4;
                 margin: 20px;
               }
-
               h1 {
                 margin: 0 0 8px 0;
                 font-size: 22px;
               }
-
               .info {
                 margin-bottom: 15px;
                 color: #555;
               }
-
               table {
                 border-collapse: collapse;
                 width: 100%;
                 background: #fff;
               }
-
-              th,
-              td {
+              th, td {
                 border: 1px solid #ccc;
                 padding: 6px 8px;
                 vertical-align: top;
               }
-
               th {
                 background: #222;
                 color: #fff;
@@ -254,27 +244,22 @@
                 top: 0;
                 z-index: 2;
               }
-
               tr:nth-child(even) {
                 background: #f0f0f0;
               }
-
               .ok {
                 color: green;
                 font-weight: bold;
               }
-
               .bad {
                 color: red;
                 font-weight: bold;
               }
-
               .small {
                 font-size: 11px;
                 max-width: 520px;
                 word-break: break-word;
               }
-
               .nowrap {
                 white-space: nowrap;
               }
@@ -307,7 +292,7 @@
                 </tr>
               </thead>
               <tbody>
-              {% for h in report_hosts %}
+              {% for h in ansible_play_hosts_all %}
                 {% set hv = hostvars[h] %}
                 {% set ip = hv.rpi_ip | default(hv.ansible_host | default(h)) %}
                 {% set lok =
@@ -341,15 +326,45 @@
             </table>
           </body>
           </html>
+      run_once: true
+      delegate_to: localhost
+
+    - name: Pokaz zestawienie w AWX Output
+      ansible.builtin.debug:
+        msg: |
+          ================= RAPORT RASPBERRY PI =================
+          LOKALIZACJA;IP;STATUS;INVENTORY_HOSTNAME;HOSTNAME;MODEL;REVISION;SERIAL;LINUX;KERNEL;ARCH
+          {% for h in ansible_play_hosts_all %}
+          {% set hv = hostvars[h] %}
+          {% set ip = hv.rpi_ip | default(hv.ansible_host | default(h)) %}
+          {% set lok =
+            'SZWALNIA DM' if ip.startswith('10.10.')
+            else
+            'SZWALNIA RE' if ip.startswith('10.237.')
+            else
+            'SZWALNIA OL' if ip.startswith('10.238.')
+            else
+            'INNE'
+          %}
+          {% set r = hv.rpi_report | default({}) %}
+          {{ r.lokalizacja | default(lok) | trim }};{{ r.ip | default(ip) }};{{ r.status | default('BRAK DANYCH') }};{{ r.inventory_hostname | default(h) }};{{ r.hostname | default('') }};{{ r.model | default('') }};{{ r.revision | default('') }};{{ r.serial | default('') }};{{ r.linux | default('') }};{{ r.kernel | default('') }};{{ r.arch | default('') }}
+          {% endfor %}
+          ========================================================
+      run_once: true
+      delegate_to: localhost
 
     - name: Pokaz sciezki raportu
       ansible.builtin.debug:
         msg:
           - "Raport CSV:  {{ report_csv }}"
           - "Raport HTML: {{ report_html }}"
+      run_once: true
+      delegate_to: localhost
 
     - name: Zapisz sciezki raportu do AWX Artifacts
       ansible.builtin.set_stats:
         data:
           raport_rpi_csv: "{{ report_csv }}"
           raport_rpi_html: "{{ report_html }}"
+      run_once: true
+      delegate_to: localhost
