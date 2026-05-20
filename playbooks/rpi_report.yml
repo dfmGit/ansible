@@ -1,6 +1,6 @@
 ---
 - name: Zbierz dane firmware, sprzetu i Linuxa z Raspberry Pi
-  hosts: rpi
+  hosts: all
   gather_facts: false
   ignore_unreachable: true
 
