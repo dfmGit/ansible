@@ -18,9 +18,9 @@
           {% if ip.startswith('10.10.') %}
           SZWALNIA DM
           {% elif ip.startswith('10.237.') %}
-          SZWALNIA RE
-          {% elif ip.startswith('10.238.') %}
           SZWALNIA OL
+          {% elif ip.startswith('10.238.') %}
+          SZWALNIA RL
           {% else %}
           INNE
           {% endif %}
