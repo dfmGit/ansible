@@ -3,7 +3,6 @@
 import json
 import os
 import sys
-import re
 import socket
 import ipaddress
 import subprocess
@@ -42,18 +41,32 @@ SSH_PASSWORD_ALT = os.environ.get(
     ""
 )
 
+REFRESH_MODE = os.environ.get(
+    "RPI_REFRESH_MODE",
+    "MERGE"
+).strip().upper()
+
 SSH_PORT = 22
 
 PORT_TIMEOUT = float(
-    os.environ.get("PORT_TIMEOUT", "0.3")
+    os.environ.get(
+        "PORT_TIMEOUT",
+        "0.3"
+    )
 )
 
 SSH_TIMEOUT = int(
-    os.environ.get("SSH_TIMEOUT", "3")
+    os.environ.get(
+        "SSH_TIMEOUT",
+        "3"
+    )
 )
 
 MAX_WORKERS = int(
-    os.environ.get("MAX_WORKERS", "80")
+    os.environ.get(
+        "MAX_WORKERS",
+        "80"
+    )
 )
 
 DEBUG = os.environ.get(
@@ -67,6 +80,7 @@ DEBUG = os.environ.get(
 # ============================================================
 
 def debug(message):
+
     if DEBUG:
         print(
             f"[refresh_rpi] {message}",
@@ -75,83 +89,66 @@ def debug(message):
 
 
 def now():
+
     return datetime.now().astimezone().isoformat(
         timespec="seconds"
     )
 
 
 # ============================================================
-# TRYB MERGE / REBUILD
-# ============================================================
-
-def get_refresh_mode():
-
-    mode = os.environ.get(
-        "RPI_REFRESH_MODE",
-        "MERGE"
-    ).strip().upper()
-
-    # pozwala również:
-    #
-    # refresh_rpi.py --mode REBUILD
-    #
-    if "--mode" in sys.argv:
-
-        try:
-            index = sys.argv.index("--mode")
-            mode = sys.argv[index + 1].upper()
-        except Exception:
-            pass
-
-    if mode not in (
-        "MERGE",
-        "REBUILD"
-    ):
-        mode = "MERGE"
-
-    return mode
-
-
-# ============================================================
-# JSON SIECI
+# KONFIGURACJA JSON
 # ============================================================
 
 def load_network_config():
 
     if not NETWORK_CONFIG_ENV:
+
         raise RuntimeError(
             "Brak RPI_NETWORK_CONFIG"
         )
 
     try:
+
         config = json.loads(
             NETWORK_CONFIG_ENV
         )
+
     except json.JSONDecodeError as exception:
+
         raise RuntimeError(
             f"Błędny RPI_NETWORK_CONFIG: {exception}"
         )
 
-    if "ZAKLADY" not in config:
+
+    if not isinstance(config, dict):
+
         raise RuntimeError(
-            "Brak ZAKLADY"
+            "RPI_NETWORK_CONFIG musi być obiektem JSON"
         )
 
-    if "WYDZIALY" not in config:
+
+    if "ZAKLADY" not in config:
+
         raise RuntimeError(
-            "Brak WYDZIALY"
+            "Brak ZAKLADY w RPI_NETWORK_CONFIG"
         )
+
+
+    if "WYDZIALY" not in config:
+
+        raise RuntimeError(
+            "Brak WYDZIALY w RPI_NETWORK_CONFIG"
+        )
+
 
     return config
 
 
 # ============================================================
-# SIECI /24
+# GENEROWANIE SIECI
 # ============================================================
 
 def build_network_list(config):
-
-    result = []
 
     zaklady = config.get(
         "ZAKLADY",
@@ -163,40 +160,63 @@ def build_network_list(config):
         {}
     )
 
+    networks = []
+
+
     for zaklad, prefix in zaklady.items():
+
+        prefix = str(prefix).strip()
+
 
         for wydzial, vlans in wydzialy.items():
 
             if not isinstance(vlans, list):
+
+                debug(
+                    f"{wydzial}: VLAN-y nie są listą"
+                )
+
                 continue
+
 
             for vlan in vlans:
 
                 vlan = str(vlan).strip()
 
+                #
+                # Wszystkie VLAN-y /24
+                #
                 cidr = (
-                    f"{prefix}.{vlan}.0/24"
+                    f"{prefix}."
+                    f"{vlan}.0/24"
                 )
 
+
                 try:
+
                     network = ipaddress.ip_network(
                         cidr,
                         strict=False
                     )
+
                 except ValueError:
+
                     debug(
                         f"Błędna sieć: {cidr}"
                     )
+
                     continue
 
-                result.append({
+
+                networks.append({
                     "zaklad": str(zaklad),
                     "wydzial": str(wydzial),
                     "vlan": vlan,
                     "network": network
                 })
 
-    return result
+
+    return networks
 
 
 # ============================================================
@@ -206,17 +226,24 @@ def build_network_list(config):
 def ssh_port_open(ip):
 
     try:
+
         with socket.create_connection(
-            (str(ip), SSH_PORT),
+            (
+                str(ip),
+                SSH_PORT
+            ),
             timeout=PORT_TIMEOUT
         ):
+
             return True
+
 
     except (
         socket.timeout,
         ConnectionRefusedError,
         OSError
     ):
+
         return False
 
 
@@ -234,7 +261,9 @@ def ssh_command(
 
     env["SSHPASS"] = password
 
+
     command = [
+
         "sshpass",
         "-e",
 
@@ -266,6 +295,7 @@ def ssh_command(
         remote_command
     ]
 
+
     try:
 
         return subprocess.run(
@@ -277,17 +307,34 @@ def ssh_command(
             env=env
         )
 
+
+    except subprocess.TimeoutExpired:
+
+        debug(
+            f"{ip}: timeout SSH"
+        )
+
+        return None
+
+
+    except FileNotFoundError:
+
+        raise RuntimeError(
+            "Brak programu sshpass"
+        )
+
+
     except Exception as exception:
 
         debug(
-            f"SSH {ip}: {exception}"
+            f"{ip}: błąd SSH: {exception}"
         )
 
         return None
 
 
 # ============================================================
-# SPRAWDZENIE RPI
+# SPRAWDZENIE RASPBERRY
 # ============================================================
 
 def check_raspberry(
@@ -300,23 +347,47 @@ def check_raspberry(
 
     ip = str(ip)
 
+
     if not ssh_port_open(ip):
+
         return None
+
+
+    debug(
+        f"{ip}: SSH dostępne"
+    )
+
 
     passwords = []
 
+
     if SSH_PASSWORD:
+
         passwords.append(
-            ("PRIMARY", SSH_PASSWORD)
+            (
+                "PRIMARY",
+                SSH_PASSWORD
+            )
         )
+
 
     if (
         SSH_PASSWORD_ALT
         and SSH_PASSWORD_ALT != SSH_PASSWORD
     ):
+
         passwords.append(
-            ("ALTERNATIVE", SSH_PASSWORD_ALT)
+            (
+                "ALTERNATIVE",
+                SSH_PASSWORD_ALT
+            )
         )
+
+
+    if not passwords:
+
+        return None
+
 
     remote_command = (
         "MODEL=$(tr -d '\\0' "
@@ -336,10 +407,22 @@ def check_raspberry(
         "\"$MACHINE\""
     )
 
+
     result = None
     auth = None
 
+
+    # ========================================================
+    # HASŁO PODSTAWOWE / ALTERNATYWNE
+    # ========================================================
+
     for auth_name, password in passwords:
+
+
+        debug(
+            f"{ip}: próba {auth_name}"
+        )
+
 
         current = ssh_command(
             ip,
@@ -347,21 +430,51 @@ def check_raspberry(
             remote_command
         )
 
-        if (
-            current is not None
-            and current.returncode == 0
-        ):
+
+        if current is None:
+
+            continue
+
+
+        if current.returncode == 0:
+
             result = current
             auth = auth_name
+
+            debug(
+                f"{ip}: logowanie OK ({auth_name})"
+            )
+
             break
 
+
+        debug(
+            f"{ip}: logowanie NIEUDANE ({auth_name})"
+        )
+
+
     if result is None:
+
+        debug(
+            f"{ip}: żadne hasło nie działa"
+        )
+
         return None
 
-    parts = result.stdout.strip().split(
+
+    output = result.stdout.strip()
+
+
+    if not output:
+
+        return None
+
+
+    parts = output.split(
         "|",
         3
     )
+
 
     model = (
         parts[0].strip()
@@ -387,61 +500,98 @@ def check_raspberry(
         else ""
     )
 
+
+    # ========================================================
+    # TYLKO RASPBERRY PI
+    # ========================================================
+
     if "Raspberry Pi" not in model:
-        return None
 
-    # serial jest podstawowym ID
-    device_id = serial
-
-    # awaryjny fallback
-    if not device_id:
-        device_id = machine_id
-
-    if not device_id:
         debug(
-            f"{ip}: RPi bez serial/machine-id"
+            f"{ip}: nie jest Raspberry Pi"
         )
+
         return None
+
+
+    # ========================================================
+    # STAŁE ID
+    # ========================================================
+
+    device_id = serial or machine_id
+
+
+    if not device_id:
+
+        debug(
+            f"{ip}: brak serial i machine-id"
+        )
+
+        return None
+
 
     debug(
-        f"RPI {ip} "
-        f"serial={device_id} "
+        f"RPI: {ip} "
+        f"serial={serial} "
+        f"hostname={hostname} "
         f"{zaklad}/{wydzial} "
-        f"auth={auth}"
+        f"VLAN={vlan} "
+        f"AUTH={auth}"
     )
 
+
     return {
+
         "id": device_id,
+
         "serial": serial,
+
         "machine_id": machine_id,
+
         "hostname": hostname,
+
         "ip": ip,
+
         "model": model,
+
         "zaklad": zaklad,
+
         "wydzial": wydzial,
+
         "vlan": vlan,
-        "network_cidr": str(network),
+
+        "network_cidr": str(
+            network
+        ),
+
         "auth": auth,
+
         "online": True,
+
         "last_seen": now()
     }
 
 
 # ============================================================
-# SKAN SIECI
+# SKAN JEDNEJ SIECI
 # ============================================================
 
 def scan_network(item):
 
-    network = item["network"]
+    network = item[
+        "network"
+    ]
 
     found = []
+
 
     with ThreadPoolExecutor(
         max_workers=MAX_WORKERS
     ) as executor:
 
-        futures = [
+
+        futures = {
+
             executor.submit(
                 check_raspberry,
                 ip,
@@ -449,30 +599,41 @@ def scan_network(item):
                 item["wydzial"],
                 item["vlan"],
                 network
-            )
+            ): ip
+
             for ip in network.hosts()
-        ]
+
+        }
+
 
         for future in as_completed(
             futures
         ):
 
             try:
+
                 result = future.result()
 
+
                 if result:
-                    found.append(result)
+
+                    found.append(
+                        result
+                    )
+
 
             except Exception as exception:
+
                 debug(
-                    f"Błąd skanu: {exception}"
+                    f"Błąd skanowania: {exception}"
                 )
+
 
     return found
 
 
 # ============================================================
-# STARA BAZA
+# WCZYTANIE STAREJ BAZY
 # ============================================================
 
 def load_hosts():
@@ -480,31 +641,44 @@ def load_hosts():
     if not os.path.isfile(
         HOSTS_FILE
     ):
+
         return {}
 
+
     try:
+
         with open(
             HOSTS_FILE,
             "r",
             encoding="utf-8"
         ) as file:
-            data = json.load(file)
 
-            if isinstance(data, dict):
-                return data
+            data = json.load(
+                file
+            )
+
+
+        if isinstance(
+            data,
+            dict
+        ):
+
+            return data
+
 
     except Exception as exception:
 
         debug(
-            f"Nie można odczytać hosts.json: "
+            f"Błąd odczytu hosts.json: "
             f"{exception}"
         )
+
 
     return {}
 
 
 # ============================================================
-# ATOMOWY ZAPIS
+# ZAPIS ATOMOWY
 # ============================================================
 
 def save_hosts(hosts):
@@ -513,16 +687,19 @@ def save_hosts(hosts):
         HOSTS_FILE
     )
 
+
     os.makedirs(
         directory,
         exist_ok=True
     )
+
 
     fd, temporary = tempfile.mkstemp(
         dir=directory,
         prefix=".hosts_",
         suffix=".json"
     )
+
 
     try:
 
@@ -540,19 +717,25 @@ def save_hosts(hosts):
                 sort_keys=True
             )
 
+
         os.replace(
             temporary,
             HOSTS_FILE
         )
 
+
     except Exception:
 
         try:
+
             os.unlink(
                 temporary
             )
+
         except Exception:
+
             pass
+
 
         raise
 
@@ -563,31 +746,64 @@ def save_hosts(hosts):
 
 def refresh():
 
-    mode = get_refresh_mode()
+    mode = REFRESH_MODE
+
+
+    if mode not in (
+        "MERGE",
+        "REBUILD"
+    ):
+
+        raise RuntimeError(
+            f"Nieprawidłowy RPI_REFRESH_MODE: {mode}"
+        )
+
 
     print(
         f"Tryb aktualizacji: {mode}"
     )
 
+
     config = load_network_config()
+
 
     networks = build_network_list(
         config
     )
 
-    if mode == "REBUILD":
 
-        hosts = {}
+    print(
+        f"Liczba sieci: {len(networks)}"
+    )
 
-    else:
+
+    # ========================================================
+    # MERGE
+    # ========================================================
+
+    if mode == "MERGE":
 
         hosts = load_hosts()
 
-        # wszystkie stare urządzenia
-        # chwilowo oznacz offline
+
+        #
+        # stare hosty zostają,
+        # ale na początku oznaczamy je offline
+        #
         for device in hosts.values():
 
-            device["online"] = False
+            device[
+                "online"
+            ] = False
+
+
+    # ========================================================
+    # REBUILD
+    # ========================================================
+
+    else:
+
+        hosts = {}
 
 
     found_count = 0
@@ -595,7 +811,12 @@ def refresh():
     updated_count = 0
 
 
+    # ========================================================
+    # SKAN
+    # ========================================================
+
     for item in networks:
+
 
         print(
             f"Skanuję: "
@@ -605,40 +826,92 @@ def refresh():
             f"-> {item['network']}"
         )
 
+
         discovered = scan_network(
             item
         )
 
+
+        print(
+            f"  Raspberry Pi: "
+            f"{len(discovered)}"
+        )
+
+
         for device in discovered:
 
+
             found_count += 1
+
 
             device_id = device[
                 "id"
             ]
 
+
+            # =================================================
+            # ISTNIEJĄCY HOST
+            # =================================================
+
             if device_id in hosts:
 
-                # zachowaj ewentualne przyszłe
-                # dodatkowe pola ręczne
-                existing = hosts[
-                    device_id
-                ]
 
-                existing.update(
+                previous_ip = hosts[
+                    device_id
+                ].get(
+                    "ip"
+                )
+
+
+                hosts[
+                    device_id
+                ].update(
                     device
                 )
 
+
                 updated_count += 1
 
+
+                if (
+                    previous_ip
+                    and previous_ip != device["ip"]
+                ):
+
+                    print(
+                        f"  IP zmienione: "
+                        f"{device_id}: "
+                        f"{previous_ip} "
+                        f"-> {device['ip']}"
+                    )
+
+
+            # =================================================
+            # NOWY HOST
+            # =================================================
+
             else:
+
 
                 hosts[
                     device_id
                 ] = device
 
+
                 new_count += 1
 
+
+                print(
+                    f"  NOWY RPI: "
+                    f"{device_id} "
+                    f"{device['ip']} "
+                    f"{device['hostname']}"
+                )
+
+
+    # ========================================================
+    # ZAPIS
+    # ========================================================
 
     save_hosts(
         hosts
@@ -647,40 +920,70 @@ def refresh():
 
     online = sum(
         1
-        for host in hosts.values()
-        if host.get("online") is True
+        for device in hosts.values()
+        if device.get(
+            "online"
+        ) is True
     )
 
-    offline = len(hosts) - online
 
+    offline = (
+        len(hosts)
+        - online
+    )
+
+
+    # ========================================================
+    # PODSUMOWANIE
+    # ========================================================
 
     print()
-    print("====================================")
-    print("ODŚWIEŻANIE RPI ZAKOŃCZONE")
-    print("====================================")
     print(
-        f"Tryb:             {mode}"
+        "========================================"
     )
+
     print(
-        f"Znaleziono teraz: {found_count}"
+        "ODŚWIEŻANIE RASPBERRY PI"
     )
+
     print(
-        f"Nowe hosty:       {new_count}"
+        "========================================"
     )
+
     print(
-        f"Zaktualizowane:   {updated_count}"
+        f"Tryb:              {mode}"
     )
+
     print(
-        f"W bazie razem:    {len(hosts)}"
+        f"Znaleziono teraz:  {found_count}"
     )
+
     print(
-        f"Online:           {online}"
+        f"Nowe hosty:        {new_count}"
     )
+
     print(
-        f"Offline:          {offline}"
+        f"Zaktualizowane:    {updated_count}"
     )
+
     print(
-        f"Plik:             {HOSTS_FILE}"
+        f"W bazie razem:     {len(hosts)}"
+    )
+
+    print(
+        f"ONLINE:            {online}"
+    )
+
+    print(
+        f"OFFLINE:           {offline}"
+    )
+
+    print(
+        f"Plik:              {HOSTS_FILE}"
+    )
+
+    print(
+        "========================================"
     )
 
 
@@ -691,7 +994,9 @@ def refresh():
 if __name__ == "__main__":
 
     try:
+
         refresh()
+
 
     except Exception as exception:
 
