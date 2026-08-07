@@ -5,95 +5,43 @@ import os
 import sys
 import socket
 import ipaddress
-import subprocess
 import re
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # ============================================================
-# KONFIGURACJA Z SEMAPHORE
+# ZMIENNE ŚRODOWISKOWE Z SEMAPHORE
 # ============================================================
 #
 # NETWORKS:
-#
-# 25=10.10.25.0/24,26=10.10.26.0/24,PROD238=10.238.40.0/24
-#
+# 25=10.10.25.0/24,26=10.10.26.0/24,238_24=10.238.24.0/24
 #
 # VLANS:
-#
-# 25,26
-#
-# albo:
-#
-# 25,PROD238
+# 25,238_24
 #
 # ============================================================
 
-NETWORKS_ENV = os.environ.get(
-    "NETWORKS",
-    ""
-)
-
-VLANS_ENV = os.environ.get(
-    "VLANS",
-    ""
-)
-
-
-# ============================================================
-# DANE SSH DO ROZPOZNAWANIA RASPBERRY
-# ============================================================
-#
-# Semaphore:
-#
-# RPI_SSH_USER=pi
-#
-# RPI_SSH_KEY=/home/semaphore/.ssh/raspberry_id
-#
-# ============================================================
-
-RPI_SSH_USER = os.environ.get(
-    "RPI_SSH_USER",
-    "pi"
-)
-
-RPI_SSH_KEY = os.environ.get(
-    "RPI_SSH_KEY",
-    "/home/semaphore/.ssh/raspberry_id"
-)
+NETWORKS_ENV = os.environ.get("NETWORKS", "")
+VLANS_ENV = os.environ.get("VLANS", "")
 
 
 # ============================================================
 # USTAWIENIA SKANOWANIA
 # ============================================================
 
-PORT_TIMEOUT = float(
-    os.environ.get(
-        "PORT_TIMEOUT",
-        "0.3"
-    )
-)
+SSH_PORT = 22
 
-SSH_TIMEOUT = int(
-    os.environ.get(
-        "SSH_TIMEOUT",
-        "3"
-    )
+PORT_TIMEOUT = float(
+    os.environ.get("PORT_TIMEOUT", "0.3")
 )
 
 MAX_WORKERS = int(
-    os.environ.get(
-        "MAX_WORKERS",
-        "80"
-    )
+    os.environ.get("MAX_WORKERS", "100")
 )
 
 MAX_HOSTS_PER_NETWORK = int(
-    os.environ.get(
-        "MAX_HOSTS_PER_NETWORK",
-        "1024"
-    )
+    os.environ.get("MAX_HOSTS_PER_NETWORK", "1024")
 )
 
 DEBUG = os.environ.get(
@@ -102,14 +50,14 @@ DEBUG = os.environ.get(
 ) == "1"
 
 
-# ============================================================
-# DEBUG
-# ============================================================
-
 def debug(message):
+    """
+    Debug idzie na STDERR.
+    Nie może trafiać do STDOUT,
+    ponieważ STDOUT musi zawierać wyłącznie JSON inventory.
+    """
 
     if DEBUG:
-
         print(
             f"[dynamic_inventory] {message}",
             file=sys.stderr
@@ -117,16 +65,30 @@ def debug(message):
 
 
 # ============================================================
-# WCZYTANIE DEFINICJI SIECI Z SEMAPHORE
+# WCZYTANIE NETWORKS
 # ============================================================
 
 def load_networks():
+    """
+    Przykład:
+
+    NETWORKS=
+    25=10.10.25.0/24,
+    26=10.10.26.0/24,
+    238_24=10.238.24.0/24
+
+    Zwraca:
+
+    {
+        "25": "10.10.25.0/24",
+        "26": "10.10.26.0/24",
+        "238_24": "10.238.24.0/24"
+    }
+    """
 
     networks = {}
 
-    items = NETWORKS_ENV.split(",")
-
-    for item in items:
+    for item in NETWORKS_ENV.split(","):
 
         item = item.strip()
 
@@ -134,27 +96,18 @@ def load_networks():
             continue
 
         if "=" not in item:
-
             debug(
-                f"Pominięto błędną definicję: {item}"
+                f"Błędna definicja NETWORKS: {item}"
             )
-
             continue
 
-
-        name, cidr = item.split(
-            "=",
-            1
-        )
-
+        name, cidr = item.split("=", 1)
 
         name = name.strip()
         cidr = cidr.strip()
 
-
         if not name or not cidr:
             continue
-
 
         try:
 
@@ -166,22 +119,18 @@ def load_networks():
         except ValueError:
 
             debug(
-                f"Nieprawidłowa sieć: {name}={cidr}"
+                f"Błędna sieć: {name}={cidr}"
             )
 
             continue
 
-
-        networks[name] = str(
-            network
-        )
-
+        networks[name] = str(network)
 
     return networks
 
 
 # ============================================================
-# SIECI WYBRANE DO SKANOWANIA
+# POBRANIE SIECI DO SKANOWANIA
 # ============================================================
 
 def get_requested_networks():
@@ -194,20 +143,18 @@ def get_requested_networks():
         if item.strip()
     ]
 
-
     result = []
-
 
     for name in requested:
 
         if name not in networks:
 
             debug(
-                f"Brak definicji sieci dla: {name}"
+                f"VLANS zawiera '{name}', "
+                f"ale brak go w NETWORKS"
             )
 
             continue
-
 
         result.append(
             (
@@ -216,12 +163,11 @@ def get_requested_networks():
             )
         )
 
-
     return result
 
 
 # ============================================================
-# BEZPIECZNA NAZWA GRUPY ANSIBLE
+# NAZWA GRUPY ANSIBLE
 # ============================================================
 
 def make_group_name(name):
@@ -232,217 +178,41 @@ def make_group_name(name):
         name
     )
 
-
     if safe.isdigit():
-
         return f"vlan_{safe}"
-
 
     return f"network_{safe.lower()}"
 
 
 # ============================================================
-# SPRAWDZENIE SSH
+# SPRAWDZENIE PORTU SSH
 # ============================================================
 
-def ssh_port_open(ip):
+def check_ssh(ip):
+
+    ip = str(ip)
 
     try:
 
         with socket.create_connection(
             (
-                str(ip),
-                22
+                ip,
+                SSH_PORT
             ),
             timeout=PORT_TIMEOUT
         ):
-
-            return True
-
+            return ip
 
     except (
         socket.timeout,
         ConnectionRefusedError,
         OSError
     ):
-
-        return False
+        return None
 
 
 # ============================================================
-# SPRAWDZENIE CZY HOST TO RASPBERRY PI
-# ============================================================
-
-def is_raspberry(ip):
-
-    ip = str(ip)
-
-
-    # --------------------------------------------------------
-    # Najpierw szybki test portu SSH
-    # --------------------------------------------------------
-
-    if not ssh_port_open(ip):
-
-        return None
-
-
-    debug(
-        f"SSH wykryte: {ip}"
-    )
-
-
-    # --------------------------------------------------------
-    # Klucz SSH musi istnieć wewnątrz kontenera Semaphore
-    # --------------------------------------------------------
-
-    if not os.path.isfile(
-        RPI_SSH_KEY
-    ):
-
-        debug(
-            f"Brak klucza SSH: {RPI_SSH_KEY}"
-        )
-
-        return None
-
-
-    # --------------------------------------------------------
-    # Komenda SSH
-    # --------------------------------------------------------
-
-    command = [
-
-        "ssh",
-
-        "-i",
-        RPI_SSH_KEY,
-
-        "-o",
-        "BatchMode=yes",
-
-        "-o",
-        "StrictHostKeyChecking=no",
-
-        "-o",
-        "UserKnownHostsFile=/dev/null",
-
-        "-o",
-        "LogLevel=ERROR",
-
-        "-o",
-        f"ConnectTimeout={SSH_TIMEOUT}",
-
-        "-o",
-        "ConnectionAttempts=1",
-
-        # ----------------------------------------------------
-        # Starsze urządzenia SSH
-        # ----------------------------------------------------
-
-        "-o",
-        "KexAlgorithms=+diffie-hellman-group14-sha1",
-
-        "-o",
-        "HostKeyAlgorithms=+ssh-rsa",
-
-        "-o",
-        "PubkeyAcceptedAlgorithms=+ssh-rsa",
-
-        # ----------------------------------------------------
-
-        f"{RPI_SSH_USER}@{ip}",
-
-        "tr -d '\\0' < /proc/device-tree/model 2>/dev/null"
-    ]
-
-
-    try:
-
-        result = subprocess.run(
-
-            command,
-
-            stdout=subprocess.PIPE,
-
-            stderr=subprocess.PIPE,
-
-            text=True,
-
-            timeout=SSH_TIMEOUT + 2
-
-        )
-
-
-    except subprocess.TimeoutExpired:
-
-        debug(
-            f"Timeout SSH: {ip}"
-        )
-
-        return None
-
-
-    except Exception as exception:
-
-        debug(
-            f"Błąd SSH {ip}: {exception}"
-        )
-
-        return None
-
-
-    # --------------------------------------------------------
-    # Nie udało się zalogować
-    # --------------------------------------------------------
-
-    if result.returncode != 0:
-
-        debug(
-            f"Nie można zalogować SSH: {ip}"
-        )
-
-        return None
-
-
-    model = result.stdout.strip()
-
-
-    if not model:
-
-        debug(
-            f"Brak modelu urządzenia: {ip}"
-        )
-
-        return None
-
-
-    debug(
-        f"{ip} -> {model}"
-    )
-
-
-    # --------------------------------------------------------
-    # TYLKO RASPBERRY PI
-    # --------------------------------------------------------
-
-    if "Raspberry Pi" not in model:
-
-        debug(
-            f"{ip} nie jest Raspberry Pi"
-        )
-
-        return None
-
-
-    return {
-        "ip": ip,
-        "model": model
-    }
-
-
-# ============================================================
-# SKANOWANIE SIECI
+# SKANOWANIE JEDNEJ SIECI
 # ============================================================
 
 def scan_network(network):
@@ -451,61 +221,38 @@ def scan_network(network):
         network.hosts()
     )
 
-
-    # --------------------------------------------------------
-    # Zabezpieczenie przed przypadkowym skanowaniem np. /16
-    # --------------------------------------------------------
-
     if len(hosts) > MAX_HOSTS_PER_NETWORK:
 
         debug(
-            f"Sieć {network} ma "
-            f"{len(hosts)} hostów - pomijam"
+            f"Sieć {network} zawiera "
+            f"{len(hosts)} hostów. Pomijam."
         )
 
         return []
 
-
     found = []
-
-
-    # --------------------------------------------------------
-    # Równoległe skanowanie
-    # --------------------------------------------------------
 
     with ThreadPoolExecutor(
         max_workers=MAX_WORKERS
     ) as executor:
 
-
         futures = {
-
             executor.submit(
-                is_raspberry,
+                check_ssh,
                 ip
             ): ip
 
             for ip in hosts
-
         }
 
-
-        for future in as_completed(
-            futures
-        ):
-
+        for future in as_completed(futures):
 
             try:
 
                 result = future.result()
 
-
-                if result is not None:
-
-                    found.append(
-                        result
-                    )
-
+                if result:
+                    found.append(result)
 
             except Exception as exception:
 
@@ -513,20 +260,9 @@ def scan_network(network):
                     f"Błąd skanowania: {exception}"
                 )
 
-
-    # --------------------------------------------------------
-    # Sortowanie IP
-    # --------------------------------------------------------
-
     found.sort(
-
-        key=lambda item:
-        ipaddress.ip_address(
-            item["ip"]
-        )
-
+        key=ipaddress.ip_address
     )
-
 
     return found
 
@@ -537,38 +273,33 @@ def scan_network(network):
 
 def build_inventory():
 
-
     inventory = {
 
         "_meta": {
             "hostvars": {}
         },
 
-        # ----------------------------------------------------
-        # Wszystkie znalezione Raspberry
-        # ----------------------------------------------------
+        # Wszystkie znalezione urządzenia posiadające SSH.
+        #
+        # To NIE oznacza jeszcze, że są Raspberry.
+        #
+        # Raspberry zostanie sprawdzone później przez
+        # playbook i credential z Semaphore Key Store.
 
-        "raspberry": {
+        "candidates": {
             "hosts": []
         }
 
     }
 
-
     requested_networks = get_requested_networks()
-
-
-    # ========================================================
-    # KAŻDA WYBRANA SIEĆ
-    # ========================================================
 
     for network_name, network_cidr in requested_networks:
 
-
         debug(
-            f"Skanuję {network_name}: {network_cidr}"
+            f"Skanowanie "
+            f"{network_name} -> {network_cidr}"
         )
-
 
         try:
 
@@ -577,19 +308,14 @@ def build_inventory():
                 strict=False
             )
 
-
         except ValueError:
 
             debug(
-                f"Błędna sieć: {network_cidr}"
+                f"Błędny CIDR: {network_cidr}"
             )
 
             continue
 
-
-        # ----------------------------------------------------
-        # Nazwa grupy Ansible
-        # ----------------------------------------------------
 
         group_name = make_group_name(
             network_name
@@ -601,30 +327,16 @@ def build_inventory():
         }
 
 
-        # ----------------------------------------------------
-        # Skanowanie
-        # ----------------------------------------------------
-
-        raspberry_hosts = scan_network(
+        hosts = scan_network(
             network
         )
 
 
-        # ----------------------------------------------------
-        # Dodanie znalezionych hostów
-        # ----------------------------------------------------
+        for ip in hosts:
 
-        for raspberry in raspberry_hosts:
-
-
-            ip = raspberry["ip"]
-
-            model = raspberry["model"]
-
-
-            # ------------------------------------------------
-            # grupa VLAN / sieć
-            # ------------------------------------------------
+            # --------------------------------------------
+            # Grupa konkretnego VLAN-u / sieci
+            # --------------------------------------------
 
             inventory[
                 group_name
@@ -633,26 +345,26 @@ def build_inventory():
             ].append(ip)
 
 
-            # ------------------------------------------------
-            # globalna grupa Raspberry
-            # ------------------------------------------------
+            # --------------------------------------------
+            # Globalna grupa kandydatów
+            # --------------------------------------------
 
             if ip not in inventory[
-                "raspberry"
+                "candidates"
             ][
                 "hosts"
             ]:
 
                 inventory[
-                    "raspberry"
+                    "candidates"
                 ][
                     "hosts"
                 ].append(ip)
 
 
-            # ------------------------------------------------
-            # HOSTVARS
-            # ------------------------------------------------
+            # --------------------------------------------
+            # Dane hosta
+            # --------------------------------------------
 
             inventory[
                 "_meta"
@@ -660,11 +372,7 @@ def build_inventory():
                 "hostvars"
             ][ip] = {
 
-                "ansible_host":
-                    ip,
-
-                "raspberry_model":
-                    model,
+                "ansible_host": ip,
 
                 "network_name":
                     network_name,
@@ -675,12 +383,8 @@ def build_inventory():
             }
 
 
-    # ========================================================
-    # SORTOWANIE GLOBALNEJ LISTY
-    # ========================================================
-
     inventory[
-        "raspberry"
+        "candidates"
     ][
         "hosts"
     ].sort(
@@ -697,22 +401,15 @@ def build_inventory():
 
 if __name__ == "__main__":
 
-
     if "--host" in sys.argv:
 
         print("{}")
 
-
     else:
 
         print(
-
             json.dumps(
-
                 build_inventory(),
-
                 indent=2
-
             )
-
         )
