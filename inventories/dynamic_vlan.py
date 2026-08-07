@@ -5,44 +5,44 @@ import os
 import sys
 import socket
 import ipaddress
-import re
+import subprocess
+import tempfile
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # ============================================================
-# ZMIENNE ŚRODOWISKOWE Z SEMAPHORE
-# ============================================================
-#
-# NETWORKS:
-# 25=10.10.25.0/24,26=10.10.26.0/24,238_24=10.238.24.0/24
-#
-# VLANS:
-# 25,238_24
-#
+# KONFIGURACJA
 # ============================================================
 
-NETWORKS_ENV = os.environ.get("NETWORKS", "")
+# Semaphore -> zmienna środowiskowa:
+#
+# VLANS=25=10.10.25.0/24,238_24=10.238.24.0/24
+#
 VLANS_ENV = os.environ.get("VLANS", "")
 
 
-# ============================================================
-# USTAWIENIA SKANOWANIA
-# ============================================================
-
-SSH_PORT = 22
-
-PORT_TIMEOUT = float(
-    os.environ.get("PORT_TIMEOUT", "0.3")
+# Semaphore -> SECRET:
+#
+# RPI_SSH_PRIVATE_KEY=
+# -----BEGIN OPENSSH PRIVATE KEY-----
+# ...
+# -----END OPENSSH PRIVATE KEY-----
+#
+SSH_PRIVATE_KEY = os.environ.get(
+    "RPI_SSH_PRIVATE_KEY",
+    ""
 )
 
-MAX_WORKERS = int(
-    os.environ.get("MAX_WORKERS", "100")
-)
 
-MAX_HOSTS_PER_NETWORK = int(
-    os.environ.get("MAX_HOSTS_PER_NETWORK", "1024")
-)
+# Użytkownik Raspberry
+# Jeżeli na Raspberry masz innego użytkownika, zmień tutaj.
+SSH_USER = "pi"
+
+
+PORT_TIMEOUT = 0.30
+SSH_TIMEOUT = 3
+MAX_WORKERS = 80
 
 DEBUG = os.environ.get(
     "DEBUG_INVENTORY",
@@ -50,13 +50,11 @@ DEBUG = os.environ.get(
 ) == "1"
 
 
-def debug(message):
-    """
-    Debug idzie na STDERR.
-    Nie może trafiać do STDOUT,
-    ponieważ STDOUT musi zawierać wyłącznie JSON inventory.
-    """
+# ============================================================
+# DEBUG
+# ============================================================
 
+def debug(message):
     if DEBUG:
         print(
             f"[dynamic_inventory] {message}",
@@ -65,30 +63,14 @@ def debug(message):
 
 
 # ============================================================
-# WCZYTANIE NETWORKS
+# ODCZYT VLAN-ÓW
 # ============================================================
 
 def load_networks():
-    """
-    Przykład:
 
-    NETWORKS=
-    25=10.10.25.0/24,
-    26=10.10.26.0/24,
-    238_24=10.238.24.0/24
+    networks = []
 
-    Zwraca:
-
-    {
-        "25": "10.10.25.0/24",
-        "26": "10.10.26.0/24",
-        "238_24": "10.238.24.0/24"
-    }
-    """
-
-    networks = {}
-
-    for item in NETWORKS_ENV.split(","):
+    for item in VLANS_ENV.split(","):
 
         item = item.strip()
 
@@ -97,7 +79,7 @@ def load_networks():
 
         if "=" not in item:
             debug(
-                f"Błędna definicja NETWORKS: {item}"
+                f"Błędna definicja VLAN: {item}"
             )
             continue
 
@@ -105,9 +87,6 @@ def load_networks():
 
         name = name.strip()
         cidr = cidr.strip()
-
-        if not name or not cidr:
-            continue
 
         try:
 
@@ -124,111 +103,220 @@ def load_networks():
 
             continue
 
-        networks[name] = str(network)
+        networks.append(
+            (
+                name,
+                network
+            )
+        )
 
     return networks
 
 
 # ============================================================
-# POBRANIE SIECI DO SKANOWANIA
+# TYMCZASOWY KLUCZ SSH
 # ============================================================
 
-def get_requested_networks():
+def create_private_key_file():
 
-    networks = load_networks()
+    if not SSH_PRIVATE_KEY:
 
-    requested = [
-        item.strip()
-        for item in VLANS_ENV.split(",")
-        if item.strip()
-    ]
-
-    result = []
-
-    for name in requested:
-
-        if name not in networks:
-
-            debug(
-                f"VLANS zawiera '{name}', "
-                f"ale brak go w NETWORKS"
-            )
-
-            continue
-
-        result.append(
-            (
-                name,
-                networks[name]
-            )
+        debug(
+            "Brak sekretu RPI_SSH_PRIVATE_KEY"
         )
 
-    return result
+        return None
+
+    try:
+
+        fd, path = tempfile.mkstemp(
+            prefix="rpi_inventory_",
+            suffix=".key"
+        )
+
+        os.write(
+            fd,
+            SSH_PRIVATE_KEY.encode("utf-8")
+        )
+
+        os.close(fd)
+
+        os.chmod(
+            path,
+            0o600
+        )
+
+        return path
+
+    except Exception as exception:
+
+        debug(
+            f"Nie można utworzyć klucza SSH: {exception}"
+        )
+
+        return None
 
 
 # ============================================================
-# NAZWA GRUPY ANSIBLE
+# SPRAWDZENIE PORTU 22
 # ============================================================
 
-def make_group_name(name):
-
-    safe = re.sub(
-        r"[^a-zA-Z0-9_]",
-        "_",
-        name
-    )
-
-    if safe.isdigit():
-        return f"vlan_{safe}"
-
-    return f"network_{safe.lower()}"
-
-
-# ============================================================
-# SPRAWDZENIE PORTU SSH
-# ============================================================
-
-def check_ssh(ip):
-
-    ip = str(ip)
+def ssh_port_open(ip):
 
     try:
 
         with socket.create_connection(
             (
-                ip,
-                SSH_PORT
+                str(ip),
+                22
             ),
             timeout=PORT_TIMEOUT
         ):
-            return ip
+
+            return True
 
     except (
         socket.timeout,
         ConnectionRefusedError,
         OSError
     ):
+
+        return False
+
+
+# ============================================================
+# SPRAWDZENIE RASPBERRY
+# ============================================================
+
+def check_raspberry(ip, key_file):
+
+    ip = str(ip)
+
+    # Najpierw szybki test TCP/22.
+    if not ssh_port_open(ip):
+        return None
+
+    debug(
+        f"SSH dostępne: {ip}"
+    )
+
+    command = [
+
+        "ssh",
+
+        "-i",
+        key_file,
+
+        "-o",
+        "BatchMode=yes",
+
+        "-o",
+        "StrictHostKeyChecking=no",
+
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+
+        "-o",
+        "LogLevel=ERROR",
+
+        "-o",
+        f"ConnectTimeout={SSH_TIMEOUT}",
+
+        "-o",
+        "ConnectionAttempts=1",
+
+        # obsługa starszego SSH
+        "-o",
+        "KexAlgorithms=+diffie-hellman-group14-sha1",
+
+        "-o",
+        "HostKeyAlgorithms=+ssh-rsa",
+
+        "-o",
+        "PubkeyAcceptedAlgorithms=+ssh-rsa",
+
+        f"{SSH_USER}@{ip}",
+
+        "tr -d '\\0' < /proc/device-tree/model 2>/dev/null"
+    ]
+
+    try:
+
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=SSH_TIMEOUT + 2
+        )
+
+    except subprocess.TimeoutExpired:
+
+        debug(
+            f"Timeout SSH: {ip}"
+        )
+
+        return None
+
+    except Exception as exception:
+
+        debug(
+            f"Błąd SSH {ip}: {exception}"
+        )
+
         return None
 
 
-# ============================================================
-# SKANOWANIE JEDNEJ SIECI
-# ============================================================
-
-def scan_network(network):
-
-    hosts = list(
-        network.hosts()
-    )
-
-    if len(hosts) > MAX_HOSTS_PER_NETWORK:
+    if result.returncode != 0:
 
         debug(
-            f"Sieć {network} zawiera "
-            f"{len(hosts)} hostów. Pomijam."
+            f"Logowanie SSH nieudane: {ip}"
         )
 
-        return []
+        return None
+
+
+    model = result.stdout.strip()
+
+
+    if not model:
+
+        debug(
+            f"Brak /proc/device-tree/model: {ip}"
+        )
+
+        return None
+
+
+    debug(
+        f"{ip}: {model}"
+    )
+
+
+    # ========================================================
+    # TYLKO RASPBERRY PI
+    # ========================================================
+
+    if "Raspberry Pi" not in model:
+
+        debug(
+            f"{ip}: nie jest Raspberry Pi"
+        )
+
+        return None
+
+
+    return {
+        "ip": ip,
+        "model": model
+    }
+
+
+# ============================================================
+# SKANOWANIE SIECI
+# ============================================================
+
+def scan_network(network, key_file):
 
     found = []
 
@@ -237,31 +325,42 @@ def scan_network(network):
     ) as executor:
 
         futures = {
+
             executor.submit(
-                check_ssh,
-                ip
+                check_raspberry,
+                ip,
+                key_file
             ): ip
 
-            for ip in hosts
+            for ip in network.hosts()
         }
 
-        for future in as_completed(futures):
+
+        for future in as_completed(
+            futures
+        ):
 
             try:
 
                 result = future.result()
 
                 if result:
-                    found.append(result)
+                    found.append(
+                        result
+                    )
 
             except Exception as exception:
 
                 debug(
-                    f"Błąd skanowania: {exception}"
+                    f"Błąd podczas skanowania: {exception}"
                 )
 
+
     found.sort(
-        key=ipaddress.ip_address
+        key=lambda item:
+        ipaddress.ip_address(
+            item["ip"]
+        )
     )
 
     return found
@@ -279,112 +378,125 @@ def build_inventory():
             "hostvars": {}
         },
 
-        # Wszystkie znalezione urządzenia posiadające SSH.
-        #
-        # To NIE oznacza jeszcze, że są Raspberry.
-        #
-        # Raspberry zostanie sprawdzone później przez
-        # playbook i credential z Semaphore Key Store.
-
-        "candidates": {
+        "raspberry": {
             "hosts": []
         }
 
     }
 
-    requested_networks = get_requested_networks()
 
-    for network_name, network_cidr in requested_networks:
+    networks = load_networks()
+
+
+    if not networks:
 
         debug(
-            f"Skanowanie "
-            f"{network_name} -> {network_cidr}"
+            "Brak poprawnych sieci w VLANS"
         )
 
-        try:
+        return inventory
 
-            network = ipaddress.ip_network(
-                network_cidr,
-                strict=False
-            )
 
-        except ValueError:
+    key_file = create_private_key_file()
+
+
+    if not key_file:
+
+        return inventory
+
+
+    try:
+
+        for vlan_name, network in networks:
 
             debug(
-                f"Błędny CIDR: {network_cidr}"
+                f"Skanowanie {vlan_name} -> {network}"
             )
 
-            continue
+
+            # grupa np. vlan_25
+            group_name = (
+                "vlan_"
+                + vlan_name
+                .replace(".", "_")
+                .replace("-", "_")
+            )
 
 
-        group_name = make_group_name(
-            network_name
-        )
+            inventory[group_name] = {
+                "hosts": []
+            }
 
 
-        inventory[group_name] = {
-            "hosts": []
-        }
+            hosts = scan_network(
+                network,
+                key_file
+            )
 
 
-        hosts = scan_network(
-            network
-        )
+            for host in hosts:
+
+                ip = host["ip"]
+                model = host["model"]
 
 
-        for ip in hosts:
-
-            # --------------------------------------------
-            # Grupa konkretnego VLAN-u / sieci
-            # --------------------------------------------
-
-            inventory[
-                group_name
-            ][
-                "hosts"
-            ].append(ip)
-
-
-            # --------------------------------------------
-            # Globalna grupa kandydatów
-            # --------------------------------------------
-
-            if ip not in inventory[
-                "candidates"
-            ][
-                "hosts"
-            ]:
-
+                # konkretna sieć
                 inventory[
-                    "candidates"
+                    group_name
                 ][
                     "hosts"
                 ].append(ip)
 
 
-            # --------------------------------------------
-            # Dane hosta
-            # --------------------------------------------
+                # wszystkie Raspberry
+                if ip not in inventory[
+                    "raspberry"
+                ][
+                    "hosts"
+                ]:
 
-            inventory[
-                "_meta"
-            ][
-                "hostvars"
-            ][ip] = {
+                    inventory[
+                        "raspberry"
+                    ][
+                        "hosts"
+                    ].append(ip)
 
-                "ansible_host": ip,
 
-                "network_name":
-                    network_name,
+                inventory[
+                    "_meta"
+                ][
+                    "hostvars"
+                ][ip] = {
 
-                "network_cidr":
-                    network_cidr
+                    "ansible_host":
+                        ip,
 
-            }
+                    "raspberry_model":
+                        model,
+
+                    "vlan_name":
+                        vlan_name,
+
+                    "network_cidr":
+                        str(network)
+
+                }
+
+
+    finally:
+
+        try:
+
+            os.unlink(
+                key_file
+            )
+
+        except Exception:
+            pass
 
 
     inventory[
-        "candidates"
+        "raspberry"
     ][
         "hosts"
     ].sort(
