@@ -135,18 +135,9 @@ def main():
         if data.get("status") == "PENDING"
     ]
 
-
-    print(
-        f"PENDING: {len(pending)}"
-    )
-
-
     if not pending:
+        sys.exit(0)
 
-        print(
-            "Brak hostów oczekujących."
-        )
-        return 0
 
 
     for host_id, data in pending:
