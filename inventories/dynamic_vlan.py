@@ -8,17 +8,17 @@ import ipaddress
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-# VLAN-y podawane z Semaphore:
-# np. VLANS=55,56,60
+# VLAN-y, np.:
+# VLANS=55,56,60
 VLANS = os.environ.get("VLANS", "55")
 
-# Jeżeli VLAN 55 = 192.168.55.0/24
+# VLAN 55 -> 192.168.55.0/24
 NETWORK_TEMPLATE = "192.168.{}.0/24"
 
-# Sprawdzamy czy działa SSH
+# Szukamy urządzeń z otwartym SSH
 CHECK_PORT = 22
 
-# timeout pojedynczego połączenia
+# Timeout połączenia
 TIMEOUT = 0.3
 
 
@@ -36,17 +36,13 @@ def check_host(ip):
 def scan_network(network):
     found = []
 
-    addresses = list(network.hosts())
-
     with ThreadPoolExecutor(max_workers=100) as executor:
-
         futures = {
             executor.submit(check_host, ip): ip
-            for ip in addresses
+            for ip in network.hosts()
         }
 
         for future in as_completed(futures):
-
             ip = futures[future]
 
             try:
@@ -55,17 +51,16 @@ def scan_network(network):
             except Exception:
                 pass
 
-    return found
+    return sorted(
+        found,
+        key=lambda x: ipaddress.ip_address(x)
+    )
 
 
 def build_inventory():
-
     inventory = {
         "_meta": {
             "hostvars": {}
-        },
-        "all": {
-            "children": []
         }
     }
 
@@ -76,11 +71,8 @@ def build_inventory():
     ]
 
     for vlan in vlan_list:
-
-        network_string = NETWORK_TEMPLATE.format(vlan)
-
         network = ipaddress.ip_network(
-            network_string,
+            NETWORK_TEMPLATE.format(vlan),
             strict=False
         )
 
@@ -90,12 +82,9 @@ def build_inventory():
             "hosts": []
         }
 
-        inventory["all"]["children"].append(group_name)
-
         hosts = scan_network(network)
 
         for ip in hosts:
-
             inventory[group_name]["hosts"].append(ip)
 
             inventory["_meta"]["hostvars"][ip] = {
@@ -106,13 +95,7 @@ def build_inventory():
 
 
 if __name__ == "__main__":
-
     if "--host" in sys.argv:
         print("{}")
     else:
-        print(
-            json.dumps(
-                build_inventory(),
-                indent=2
-            )
-        )
+        print(json.dumps(build_inventory(), indent=2))
