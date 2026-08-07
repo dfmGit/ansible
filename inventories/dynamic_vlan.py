@@ -6,200 +6,210 @@ import sys
 import socket
 import ipaddress
 import subprocess
-import shutil
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-# VLAN-y, np.:
-# VLANS=50
-# VLANS=50,55,60
-VLANS = os.environ.get("VLANS", "50")
+# ---------------------------------------------------------
+# MAPOWANIE NAZW -> VLAN
+# ---------------------------------------------------------
 
-# VLAN 50 -> 10.10.50.0/24
-NETWORK_TEMPLATE = "10.10.{}.0/24"
-
-# Porty używane dodatkowo do wykrywania aktywnych urządzeń
-CHECK_PORTS = [
-    22,     # SSH
-    445,    # SMB / Windows
-    3389,   # RDP
-    5985,   # WinRM HTTP
-    5986,   # WinRM HTTPS
-]
-
-TCP_TIMEOUT = 0.20
-PING_TIMEOUT = 1
-MAX_WORKERS = 100
+ENVIRONMENTS = {
+    "produkcja": 20,
+    "magazyn": 25,
+    "logistyka": 50,
+}
 
 
-def ping_host(ip):
-    """
-    Sprawdza ICMP ping.
-    Jeśli polecenia ping nie ma w kontenerze, zwraca False.
-    """
+# np. ENVIRONMENT=produkcja
+ENVIRONMENT = os.environ.get(
+    "ENVIRONMENT",
+    "produkcja"
+).lower()
 
-    if shutil.which("ping") is None:
+
+# Dane potrzebne tylko do ROZPOZNANIA Raspberry
+RPI_SSH_USER = os.environ.get(
+    "RPI_SSH_USER",
+    "pi"
+)
+
+RPI_SSH_KEY = os.environ.get(
+    "RPI_SSH_KEY",
+    "/home/semaphore/.ssh/raspberry_id"
+)
+
+
+SSH_TIMEOUT = 2
+MAX_WORKERS = 60
+
+
+def port_open(ip, port=22):
+    try:
+        with socket.create_connection(
+            (str(ip), port),
+            timeout=0.3
+        ):
+            return True
+
+    except OSError:
         return False
+
+
+def is_raspberry(ip):
+
+    ip = str(ip)
+
+    # Bez SSH nie próbujemy dalej
+    if not port_open(ip, 22):
+        return False
+
+    command = [
+        "ssh",
+
+        "-i",
+        RPI_SSH_KEY,
+
+        "-o",
+        "BatchMode=yes",
+
+        "-o",
+        "StrictHostKeyChecking=no",
+
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+
+        "-o",
+        f"ConnectTimeout={SSH_TIMEOUT}",
+
+        # kompatybilność ze starszym SSH
+        "-o",
+        "KexAlgorithms=+diffie-hellman-group14-sha1",
+
+        "-o",
+        "HostKeyAlgorithms=+ssh-rsa",
+
+        "-o",
+        "PubkeyAcceptedAlgorithms=+ssh-rsa",
+
+        f"{RPI_SSH_USER}@{ip}",
+
+        "tr -d '\\0' < /proc/device-tree/model 2>/dev/null"
+    ]
 
     try:
         result = subprocess.run(
-            [
-                "ping",
-                "-c", "1",
-                "-W", str(PING_TIMEOUT),
-                str(ip)
-            ],
-            stdout=subprocess.DEVNULL,
+            command,
+            stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            timeout=PING_TIMEOUT + 1
+            text=True,
+            timeout=SSH_TIMEOUT + 2
         )
 
-        return result.returncode == 0
+        if result.returncode != 0:
+            return False
+
+        model = result.stdout.strip()
+
+        return "Raspberry Pi" in model
 
     except Exception:
         return False
 
 
-def check_port(ip, port):
-    try:
-        with socket.create_connection(
-            (str(ip), port),
-            timeout=TCP_TIMEOUT
-        ):
-            return True
-
-    except (socket.timeout, ConnectionRefusedError, OSError):
-        return False
-
-
-def check_host(ip):
-    ip = str(ip)
-
-    # Najpierw ping
-    ping_ok = ping_host(ip)
-
-    open_ports = []
-
-    # Sprawdzamy typowe porty
-    for port in CHECK_PORTS:
-        if check_port(ip, port):
-            open_ports.append(port)
-
-    active = ping_ok or len(open_ports) > 0
-
-    if not active:
-        return None
-
-    # Orientacyjne rozpoznanie typu hosta
-    host_type = "unknown"
-
-    if 5985 in open_ports or 5986 in open_ports:
-        host_type = "windows"
-
-    elif 22 in open_ports:
-        host_type = "linux"
-
-    elif 445 in open_ports or 3389 in open_ports:
-        host_type = "windows"
-
-    return {
-        "ip": ip,
-        "ping": ping_ok,
-        "ports": open_ports,
-        "type": host_type
-    }
-
-
 def scan_network(network):
-    found = []
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    raspberry_hosts = []
+
+    with ThreadPoolExecutor(
+        max_workers=MAX_WORKERS
+    ) as executor:
 
         futures = {
-            executor.submit(check_host, ip): ip
+            executor.submit(is_raspberry, ip): ip
             for ip in network.hosts()
         }
 
         for future in as_completed(futures):
 
+            ip = futures[future]
+
             try:
-                result = future.result()
-
-                if result:
-                    found.append(result)
-
+                if future.result():
+                    raspberry_hosts.append(
+                        str(ip)
+                    )
             except Exception:
                 pass
 
     return sorted(
-        found,
-        key=lambda x: ipaddress.ip_address(x["ip"])
+        raspberry_hosts,
+        key=ipaddress.ip_address
     )
 
 
 def build_inventory():
 
+    if ENVIRONMENT not in ENVIRONMENTS:
+
+        # Nie wypisujemy błędu tekstowego,
+        # bo inventory musi zwrócić poprawny JSON
+        return {
+            "_meta": {
+                "hostvars": {}
+            },
+            "raspberry": {
+                "hosts": []
+            }
+        }
+
+
+    vlan = ENVIRONMENTS[ENVIRONMENT]
+
+    network = ipaddress.ip_network(
+        f"10.10.{vlan}.0/24",
+        strict=False
+    )
+
+    hosts = scan_network(network)
+
     inventory = {
+
         "_meta": {
             "hostvars": {}
         },
 
-        "active": {
+        "raspberry": {
             "hosts": []
         },
 
-        "linux": {
+        ENVIRONMENT: {
             "hosts": []
         },
 
-        "windows": {
-            "hosts": []
-        },
-
-        "unknown": {
+        f"vlan_{vlan}": {
             "hosts": []
         }
     }
 
-    vlan_list = [
-        vlan.strip()
-        for vlan in VLANS.split(",")
-        if vlan.strip()
-    ]
 
-    for vlan in vlan_list:
+    for ip in hosts:
 
-        network = ipaddress.ip_network(
-            NETWORK_TEMPLATE.format(vlan),
-            strict=False
-        )
+        inventory["raspberry"]["hosts"].append(ip)
 
-        vlan_group = f"vlan_{vlan}"
+        inventory[ENVIRONMENT]["hosts"].append(ip)
 
-        inventory[vlan_group] = {
-            "hosts": []
+        inventory[f"vlan_{vlan}"]["hosts"].append(ip)
+
+        inventory["_meta"]["hostvars"][ip] = {
+
+            "ansible_host": ip,
+
+            "environment": ENVIRONMENT,
+
+            "vlan": vlan
         }
 
-        hosts = scan_network(network)
-
-        for host in hosts:
-
-            ip = host["ip"]
-            host_type = host["type"]
-
-            inventory[vlan_group]["hosts"].append(ip)
-            inventory["active"]["hosts"].append(ip)
-
-            inventory[host_type]["hosts"].append(ip)
-
-            inventory["_meta"]["hostvars"][ip] = {
-                "ansible_host": ip,
-                "detected_type": host_type,
-                "ping_available": host["ping"],
-                "detected_ports": host["ports"],
-                "vlan": vlan
-            }
 
     return inventory
 
@@ -207,9 +217,11 @@ def build_inventory():
 if __name__ == "__main__":
 
     if "--host" in sys.argv:
+
         print("{}")
 
     else:
+
         print(
             json.dumps(
                 build_inventory(),
