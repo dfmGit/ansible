@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 VLANS = os.environ.get("VLANS", "55")
 
 # VLAN 55 -> 192.168.55.0/24
-NETWORK_TEMPLATE = "192.168.{}.0/24"
+NETWORK_TEMPLATE = "10.10.{}.0/24"
 
 # Szukamy urządzeń z otwartym SSH
 CHECK_PORT = 22
